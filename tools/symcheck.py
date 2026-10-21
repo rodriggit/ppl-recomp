@@ -3,13 +3,15 @@
 symcheck.py ROM names.txt SYMBOL_LISTS_CPP RUNTIME_DIR [PORT_DIR] [--why ADDR]
 
 Functions come from funcsplit.py. A function is not recompiled when its name is in
-N64Recomp's reimplemented or ignored list (src/symbol_lists.cpp at the pinned commit);
-every other function is. Reports, for the recompiled ones only:
+N64Recomp's reimplemented or ignored list (src/symbol_lists.cpp at the pinned commit)
+or in gen_config.py's IGNORED; every other function is (gen_config.py's STUBS as empty
+bodies). Reports, for the recompiled ones only:
   - split problems (branches out of the function that are not tail calls);
   - instructions N64Recomp rejects: cop0 moves other than Status, eret, cache, tlb*, sync;
   - loads/stores through a KSEG1 or RDB-port address (they would fault in the port);
   - calls, tail calls and address references to functions that are not recompiled and
-    that neither the runtime nor the port defines as NAME_recomp.
+    that neither the runtime nor the port defines as NAME_recomp; from unreachable code,
+    only the calls (the port must still define them to link).
 Then the names of N64Recomp's reimplemented list that our list does not have.
 --why ADDR prints how the function at ADDR is reached from the entry point instead.
 """
@@ -22,6 +24,7 @@ import rabbitizer
 
 from funcinfo import load_names
 from funcsplit import CODE_END_VRAM, DATA_END_VRAM, MAIN_VRAM, Code, branch_target, check, find_starts
+from gen_config import IGNORED, STUBS
 
 LOADS_STORES = {0x20, 0x21, 0x23, 0x24, 0x25, 0x27, 0x28, 0x29, 0x2B, 0x31, 0x35, 0x37, 0x39, 0x3D, 0x3F}
 COP0_STATUS = 12
@@ -103,13 +106,16 @@ def main():
     names = load_names(names_path)
     lists = n64recomp_lists(lists_path)
     provided = defined_recomp_funcs(dirs)
-    not_recompiled = lists["reimplemented_funcs"] | lists["ignored_funcs"]
+    not_recompiled = lists["reimplemented_funcs"] | lists["ignored_funcs"] | set(IGNORED)
 
     sure, accepted, _ = find_starts(code)
     funcs, problems = check(code, sure | set(accepted))
     name_of = lambda a: names.get(a, f"func_{a:08X}")
     recompiled = {s for s, _ in funcs if name_of(s) not in not_recompiled}
     scans = {s: scan(code, s, s + size) for s, size in funcs if s in recompiled}
+    for s in recompiled:
+        if name_of(s) in STUBS:
+            scans[s] = ([], [], [])
 
     # Reachable in the port: from the entry point, following references out of recompiled
     # functions only (the runtime replaces the rest). Code pointers stored as data are
@@ -162,14 +168,14 @@ def main():
     unused = sum(len(t) for n, t in enumerate(tables) if n not in used)
     dead = sorted(recompiled - live)
     print(f"{len(funcs)} functions: {len(recompiled)} recompiled ({len(dead)} of them unreachable in the port), "
-          f"{len(funcs) - len(recompiled)} replaced or ignored by N64Recomp; "
+          f"{len(funcs) - len(recompiled)} replaced or ignored by N64Recomp or the config; "
           f"{len(provided)} NAME_recomp defined by the runtime/port")
     print(f"{len(tables) - len(used)} of {len(tables)} code pointer tables in data ({unused} pointers) "
           f"are addressed only by unreachable code")
 
     bad = defaultdict(list)
     for start, kind, detail in problems:
-        if start in recompiled:
+        if start in recompiled and name_of(start) not in STUBS:
             bad[start].append(f"{kind}: {detail}")
     for start, (rejected, hw, _) in scans.items():
         bad[start] += [f"rejected  {x}" for x in rejected] + [f"hardware  {x}" for x in hw]
@@ -181,18 +187,26 @@ def main():
             print(f"      {line}")
 
     print("\nUnreachable recompiled functions that N64Recomp rejects or that touch hardware "
-          "(to list as ignored in the config):")
+          "(to ignore or stub in the config):")
     print("  " + " ".join(name_of(s) for s in dead if bad[s]))
 
-    missing = defaultdict(list)
-    for start in sorted(live & recompiled):
+    # Reachable code needs a real NAME_recomp; unreachable code only needs its calls to link.
+    missing, link_only = defaultdict(list), defaultdict(list)
+    for start in sorted(recompiled):
         for kind, v, t in scans[start][2]:
-            if t in names and name_of(t) in not_recompiled and name_of(t) not in provided:
-                missing[name_of(t)].append(f"{kind} {v:08X} in {name_of(start)}")
+            if t in starts and name_of(t) in not_recompiled and name_of(t) not in provided:
+                if start in live:
+                    missing[name_of(t)].append(f"{kind} {v:08X} in {name_of(start)}")
+                elif kind != "address":
+                    link_only[name_of(t)].append(f"{kind} {v:08X} in {name_of(start)}")
 
     print("\nNot recompiled, reached from reachable recompiled code, and not defined by the runtime/port:")
     for name, where in sorted(missing.items()):
         print(f"  {name:28} {len(where):3}  e.g. {'; '.join(where[:3])}")
+    print("\nCalled only from unreachable recompiled code (the port needs a definition to link):")
+    for name, where in sorted(link_only.items()):
+        if name not in missing:
+            print(f"  {name:28} {len(where):3}  e.g. {'; '.join(where[:3])}")
 
     ours = set(names.values())
     print("\nIn N64Recomp's reimplemented list but not in our names:")

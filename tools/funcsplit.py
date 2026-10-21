@@ -162,15 +162,20 @@ def main():
 
     if "--out" in sys.argv:
         out = sys.argv[sys.argv.index("--out") + 1]
-        with open(out, "w", newline="\n") as f:
-            f.write("[[section]]\nname = \"main\"\n")
-            f.write(f"rom = 0x{MAIN_ROM:X}\nvram = 0x{MAIN_VRAM:X}\nsize = 0x{CODE_END_VRAM - MAIN_VRAM:X}\n\n")
-            f.write("functions = [\n")
-            for start, size in funcs:
-                name = names.get(start, f"func_{start:08X}")
-                f.write(f"    {{ name = \"{name}\", vram = 0x{start:08X}, size = 0x{size:X} }},\n")
-            f.write("]\n")
+        write_syms(out, funcs, names)
         print(f"wrote {out}")
+
+
+def write_syms(path, funcs, names):
+    """N64Recomp symbol file: the main segment's code as one section."""
+    with open(path, "w", newline="\n") as f:
+        f.write("[[section]]\nname = \"main\"\n")
+        f.write(f"rom = 0x{MAIN_ROM:X}\nvram = 0x{MAIN_VRAM:X}\nsize = 0x{CODE_END_VRAM - MAIN_VRAM:X}\n\n")
+        f.write("functions = [\n")
+        for start, size in funcs:
+            name = names.get(start, f"func_{start:08X}")
+            f.write(f"    {{ name = \"{name}\", vram = 0x{start:08X}, size = 0x{size:X} }},\n")
+        f.write("]\n")
 
 
 if __name__ == "__main__":
