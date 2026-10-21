@@ -33,10 +33,10 @@ the `ucode` pointer the game stores in an OSTask (setup code at 0x80001860,
 | ROM | VRAM | Text size | Data (ROM) | What |
 |---|---|---|---|---|
 | 0xB05C0 | 0x800AF9C0 | 0xD0 | — | rspboot |
-| 0xB0690 | 0x800AFA90 | 0xE20 | ? | probably aspMain (audio); to confirm |
+| 0xB0690 | 0x800AFA90 | 0xE20 | 0xC1FF0 (0x2C0) | aspMain (audio): the audio manager at 0x80090118 passes these two to the task builder at 0x8008FED0 |
 | 0xB14B0 | 0x800B08B0 | 0x5D0 | 0xC22B0 (0x70) | task type 7: probably the HVQM2 video decoder |
 | 0xB1A80 | 0x800B0E80 | 0x1430 | 0xC3000 (0x800) | F3DEX 1.23 (output buffer 0x2000: FIFO) |
-| 0xB2EB0 | 0x800B22B0 | ? | 0xC3800 (0x800) | S2DEX 1.07 |
+| 0xB2EB0 | 0x800B22B0 | 0x17D8 (0x17F0 padded) | 0xC3800 (0x800) | S2DEX 1.07 |
 
 Strings: "RSP Gfx ucode F3DEX 1.23 Yoshitaka Yasumoto Nintendo." at ROM 0xC32B0,
 "RSP Gfx ucode S2DEX 1.07 ..." at ROM 0xC3939.

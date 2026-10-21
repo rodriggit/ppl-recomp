@@ -1,0 +1,174 @@
+# libultra functions identified in the main segment (see docs/phase1.md).
+# Identified from the ROM only: how each function is called, the hardware
+# registers and cop0 registers it touches, and what it calls.
+# ADDR name  # evidence
+
+# --- startup
+800A19C0 osInitialize  # first call of the game's startup (0x80000528); sets SR, caches, TLB, AI
+800A5CC0 __osSetFpcCsr  # 0x10 bytes, called once by osInitialize
+800A61F0 __osSiRawReadIo  # KSEG1 PIF access after __osSiDeviceBusy; used by osInitialize
+800A62B0 __osSiRawWriteIo  # same, write
+800A1980 osAfterPreNMI  # __osSpSetPc(0); boot checks for -1
+
+# --- caches, TLB, addresses
+80099800 osInvalDCache  # (addr, size) before every DMA; `cache`
+800998B0 osWritebackDCache  # `cache`; called before SP/SI DMAs and by osInitialize
+80099930 osWritebackDCacheAll  # `cache 0x01` over 0x2000 bytes from 0x80000000; 5 callers, 3 in game code
+800A3BF0 osInvalICache  # `cache`; called by osInitialize
+800A09F0 __osProbeTLB  # tlbp/tlbr, only caller is osVirtualToPhysical
+8009A340 osVirtualToPhysical  # calls __osProbeTLB; 37 callers
+800A63A0 osUnmapTLBAll  # tlbwi loop without PageMask, called by osInitialize
+800A6340 osMapTLBRdb  # tlbwi with PageMask, called by osInitialize
+
+# --- interrupts, cop0
+80091110 osSetIntMask  # MI_INTR_MASK + Status
+800A3280 __osDisableInt  # Status read/modify/write; brackets every queue/thread operation
+800A32F0 __osRestoreInt  # Status write, 0x20 bytes, paired with __osDisableInt
+800A5C90 __osGetCause  # mfc0 Cause only
+800A5CA0 __osGetSR  # mfc0 Status only
+800A5CB0 __osSetCompare  # mtc0 Compare only
+800A5CD0 __osSetSR  # mtc0 Status only
+8009E220 osGetCount  # mfc0 Count only, 26 callers
+800A2490 __osExceptionPreamble  # lui/addiu k0 = 0x800A2564, jr k0; osInitialize copies it to the vectors (0x800A1A58)
+800A2564 __osException  # saves the thread context, reads Cause/EPC/BadVaddr, touches every interface's status
+800A2EA4 send_mesg  # (event * 8) into the event table at 0x8021B970, osSendMesg-like; returns with jr s2
+800A3270 __osCleanupThread  # osDestroyThread(NULL), no return; return address of every new thread
+
+# --- threads
+8009FA30 osCreateThread  # called by every manager set-up before osStartThread; 11 callers
+8009FEC0 osStartThread  # receives __osPopThread's result in Send/Jam
+8009FC00 osDestroyThread  # __osDequeueThread + __osDispatchThread
+800A0060 osStopThread  # __osDequeueThread + __osEnqueueAndYield
+800A01B0 osYieldThread  # __osEnqueueAndYield only, 6 callers
+8009FD20 osGetThreadPri  # 0x50, no calls; managers save the priority with it
+8009FD70 osSetThreadPri  # managers raise/restore the priority with it
+800A0150 __osDequeueThread  # 0x60, used by Destroy/Stop/SetPri
+800A2F94 __osEnqueueAndYield  # called by Recv/Send/Jam with interrupts disabled
+800A30E4 __osPopThread  # result passed to osStartThread in Send/Jam
+800A309C __osEnqueueThread  # used by osStartThread/osSetThreadPri
+800A30F4 __osDispatchThread  # eret after loading EPC/Status, calls __osPopThread
+
+# --- messages and events
+8009DB60 osCreateMesgQueue  # (mq, msgs, count)
+8009DDC0 osRecvMesg  # waits for the DMA message; loops on validCount
+8009DF70 osSendMesg  # sends RSP tasks
+8009DC00 osJamMesg  # same callees as Recv/Send, 2 callers
+8009E120 osSetEventMesg  # called by every manager set-up with an event number
+
+# --- timers
+800A0210 osGetTime  # osGetCount with interrupts disabled, 19 callers
+800A02F0 osSetTimer  # __osInsertTimer + __osSetTimerIntr; used by osContInit's 500 ms wait
+800A03F0 __osTimerServicesInit  # called once by osCreateViManager
+800A049C __osTimerInterrupt  # Compare/Count, osSendMesg; called by the VI manager thread
+800A07C4 __osSetTimerIntr  # osGetCount + __osSetCompare
+800A0844 __osInsertTimer  # list insertion with interrupts disabled
+
+# --- VI
+800A0BE0 osCreateViManager  # Get/SetThreadPri, queue, thread
+800A0DF4 viMgrMain  # thread entry passed to osCreateThread by osCreateViManager
+800A10D0 osViSetMode  # called once by the scheduler set-up, after osCreateViManager
+800A1000 osViSetEvent  # scheduler set-up, with a queue and a count
+800A11A0 osViSetSpecialFeatures  # 0x290 bytes, VI flags
+800A1430 osViSwapBuffer  # 3 callers, interrupts disabled
+800A1880 osViBlack  # sets/clears VI_STATE_BLACK (0x20) in __osViNext
+800A0AB0 osViGetCurrentFramebuffer  # interrupts disabled, read only
+800A0B30 osViGetNextFramebuffer  # same, next context
+800A1510 __osViSwapContext  # writes every VI register
+800A0BB0 osViGetCurrentLine  # returns VI_CURRENT (0xA4400010); callers wait for retrace in pairs
+800A63F0 __osViInit  # VI_STATUS/VI_CURRENT, bzero of the contexts, called by osCreateViManager
+
+# --- PI
+800911B0 osCreatePiManager  # 2 queues, __osPiCreateAccessQueue, PI event, thread
+80091E80 __osDevMgrMain  # loop over requests, raw PI read/write/DMA, replies
+800923C0 __osPiCreateAccessQueue
+8009241C __osPiGetAccess
+8009246C __osPiRelAccess
+800924B0 osPiStartDma  # (mb, pri, OS_READ, rom, ram, size, mq) from the ROM read 0x80001CAC
+800918D0 osEPiWriteIo  # (handle, addr, data): flash passes commands such as 0xD2000000 in a2; 17 callers
+80091960 osEPiReadIo  # (handle, addr, &data); 9 callers
+800919F0 osEPiStartDma  # osJamMesg or osSendMesg on the PI command queue
+80091C30 osEPiLinkHandle  # interrupts disabled; called by osFlashInit
+80091C90 osCartRomInit  # bzero of the handle, ROM header at 0xB0000000
+800A35C0 osPiGetCmdQueue  # used by osEPiStartDma
+800A3370 __osEPiRawStartDma  # PI_DRAM/CART/LEN registers
+800A38F0 __osEPiRawWriteIo  # domain registers then write; called by osEPiWriteIo
+800A3610 __osEPiRawReadIo  # domain registers then read; called by osEPiReadIo
+800A3310 __osResetGlobalIntMask  # interrupts disabled, used by __osDevMgrMain
+
+# --- FlashRAM
+800904A8 osFlashChange  # base = 0xA8000000 | (chip << 17)
+800904E8 osFlashInit  # handle type 8, latency 5, pulse 0xC, page 0xF, release 2; osEPiLinkHandle
+800906D0 osFlashReadId  # command 0xE1, then an 8-byte DMA
+80090838 osFlashAllErase  # command 0x3C
+80090988 osFlashAllEraseThrough  # second 0x3C; starts after AllErase's jr ra (funcsplit.py)
+800909F0 osFlashCheckEraseEnd  # follows AllEraseThrough; status check
+80090A94 osFlashSectorErase  # command 0x4B
+80090BF4 osFlashSectorEraseThrough  # second 0x4B
+80090C6C osFlashWriteBuffer  # command 0xB4, then a DMA
+80090D2C osFlashWriteArray  # command 0xA5
+80090E9C osFlashReadArray  # read mode, DMA, 3 callers
+8009061C osFlashReadStatus  # write 0xD2 (status) + read, twice; called first by osFlashReadId
+800907D4 osFlashClearStatus  # write 0xD2 then write 0, no read
+
+# --- RSP
+8009E230 _VirtualToPhysicalTask  # bcopy of an OSTask + osVirtualToPhysical, only caller osSpTaskLoad
+8009E378 osSpTaskLoad  # _VirtualToPhysicalTask, osWritebackDCache, SP status/PC/DMA helpers
+8009E604 osSpTaskStartGo  # __osSpDeviceBusy loop then __osSpSetStatus
+800A6130 osSpTaskYield  # __osSpSetStatus only
+800A6160 osSpTaskYielded  # __osSpGetStatus
+800AA550 __osSpGetStatus  # reads SP_STATUS
+800A5F30 __osSpDeviceBusy  # reads SP_STATUS, polled before SP_SET_* writes
+800A5F80 __osSpSetStatus  # writes SP_STATUS
+800A5FB0 __osSpSetPc  # writes SP_PC
+800A6000 __osSpRawStartDma  # SP_MEM_ADDR/DRAM_ADDR/RD_LEN/WR_LEN
+800AA580 __osSpRawWriteIo  # KSEG1 SP memory after __osSpDeviceBusy
+800AA640 __osSpRawReadIo  # same, read
+
+# --- RDP
+800A5B60 osDpSetNextBuffer  # DPC_START/END/STATUS
+800A7AB0 __osDpDeviceBusy  # reads DPC_STATUS
+
+# --- AI
+800926F0 osAiGetLength  # reads AI_LEN
+80092720 osAiGetStatus  # reads AI_STATUS
+80092750 osAiSetFrequency  # writes AI_DACRATE and AI_BITRATE
+80092A00 osAiSetNextBuffer  # AI_DRAM_ADDR/LEN after __osAiDeviceBusy
+800A3BA0 __osAiDeviceBusy  # reads AI_STATUS, only caller osAiSetNextBuffer
+
+# --- SI and controllers
+8009F840 __osSiRawStartDma  # SI_DRAM_ADDR/PIF_ADDR/STATUS, cache ops around it
+800AA6D0 __osSiDeviceBusy  # reads SI_STATUS
+8009F940 __osSiCreateAccessQueue  # queue + one message
+8009F99C __osSiGetAccess
+8009F9EC __osSiRelAccess
+80099E90 osContInit  # 500 ms osSetTimer wait, __osSiCreateAccessQueue
+80099960 osContStartQuery  # access, __osPackRequestData, SI DMA
+80099A30 osContStartReadData  # access, __osPackReadData, SI DMA
+80099ACC osContGetReadData  # 3 callers, no SI DMA
+800999F4 osContGetQuery  # (status): only __osContGetInitData(&pattern, status); called by the game at 0x80046E64
+8009A2C0 osContSetCh  # (ch): clamped to 4, stored at 0x801C6EC0, last command = 0xFE, inside SI access
+80099BC8 __osPackReadData
+8009A174 __osPackRequestData
+8009A04C __osContGetInitData
+80099D00 osContReset  # (mq, status): reset packet, __osPackRequestData(0xFF = CONT_CMD_RESET), last command = 0xFF, __osContGetInitData; called by the game at 0x80046FA4
+80099E0C __osPackResetData  # status word = 1, four 0xFD channel bytes then 0xFE; only caller osContReset
+
+# --- standard C helpers (recompiled as ordinary code; named for readability)
+8009D400 bzero  # 0xA0 bytes, 97 callers; clears the flash handle in osFlashInit
+8009D0E0 bcopy  # 0x320 bytes, 96 callers; used by _VirtualToPhysicalTask
+800A4450 _Printf  # 0x910 bytes; integer and float conversion helpers follow
+8009DA60 sprintf  # _Printf into a buffer; 54 callers from game code, no hardware
+8009D620 osSyncPrintf  # _Printf with an output routine (0x8009D6A0) that ends in __osRdbSend; 52 game callers
+8009CD40 __osRdbSend  # writes the RDB port 0xC0000000 when __osRdbWriteOK (0x800BE9C0, initially 1): must be a no-op in the port
+
+# --- error reporting of the debug libultra (not in N64Recomp's lists)
+800A1F70 __osError  # jumps through __osErrorHandler (0x800C0D94) or, when 0x801AB62C is set, the PARTNER one (0x800C0FD8); 72 library callers, none in game code
+# 800A1FC0  # default handler, initial value of 0x800C0D94: logs the error with 0x800A5960 and flushes it with 0x800A5748
+# 800A5960  # writes a log record (code, argument count, arguments, osGetCount)
+# 800A5748  # flushes the log through __osRdbSend, waiting for the RDB event
+# 800A23C0  # PARTNER handler, initial value of 0x800C0FD8; 0x800A2050 / 0x800A20E0 / 0x800A2168 print through the PARTNER port
+
+# --- not confirmed yet
+# 800A24A0  # PARTNER exception hook: jumps to 0xBFF00014 when the PARTNER status bit is set; inside __osExceptionPreamble's range
+# 800A3CF8, 800A3DBC  # RDB port 0xC0000000 too; reached only from __osException (0x800A3F24)
+# 800A7BE0-800AB9F8  # SP register debugger code (rmon-like); probably unused on retail
