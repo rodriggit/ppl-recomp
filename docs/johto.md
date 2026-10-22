@@ -73,8 +73,13 @@ Character ids follow the portrait order of OPPONENT.SBF / POKEMON.SBF / RESULT.S
 | 13 | Lorelei | clorelei.bif | cloyster, polywirl, dewgong |
 | 14 | Bruno | cbruno.bif | onix, hitmonchan, primape |
 
-- Per character: `NAME.BIF` (IA16 silhouette), `CNAME.BIF` (104×129 CI8 portrait,
-  2 frames), some `PBACK*.BIF` backgrounds.
+- Per character: `CNAME.BIF`, the portrait: 104×129 CI8 (up to 256 colors), name drawn
+  on top over a purple background, 2 frames: frame 0 faces right (left side), frame 1
+  is the right-side version, art mirrored but the name not (Team Rocket's is a different
+  drawing), and has flag 0x100 set. `NAME.BIF`: IA16 silhouette laid over the group
+  picture TRSELECT.BIF (320×240) in the 2P character select, so a new character also
+  needs its place in that picture. `RECHEADS.BIF`: 16 RGBA32 heads (~32×32), one per
+  1P stage in stage order (0 Gary, 1–13 Brock…Bruno, 14 Gary, 15 Mewtwo). Some `PBACK*.BIF` 128×96 backgrounds.
 - Per Pokémon: `NAME.BIF` and `XXXXTEXT.BIF` (96×13 CI8 name label). The label names
   are in a second table copied from 0x800C3930 (0x180 bytes: 48 entries of 8 bytes,
   index (id × 3 + slot) × 8).
