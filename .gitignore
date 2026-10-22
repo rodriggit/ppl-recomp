@@ -4,6 +4,9 @@
 *.v64
 source/
 
+# mod assets (Nintendo/Game Freak art, voices) never go in the repo
+mods/
+
 # Python env
 .venv/
 
