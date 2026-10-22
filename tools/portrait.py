@@ -258,8 +258,8 @@ def draw_name(canvas, font, text):
             x += a
 
 
-def load_character(path, key, crop):
-    im = Image.open(path).convert("RGBA")
+def remove_key(im, key):
+    """Clear a flat background color: "auto" (the top-left pixel's) or RRGGBB."""
     if key:
         a = np.asarray(im).copy()
         col = a[0, 0, :3].astype(int) if key == "auto" else np.array([int(key[i:i + 2], 16) for i in (0, 2, 4)])
@@ -274,6 +274,11 @@ def load_character(path, key, crop):
             rgb[..., c] = np.where(edge, np.minimum(rgb[..., c], others), rgb[..., c])
         a[..., :3] = rgb
         im = Image.fromarray(a)
+    return im
+
+
+def load_character(path, key, crop):
+    im = remove_key(Image.open(path).convert("RGBA"), key)
     if crop == "auto":
         # bust framing like the originals: the top of the head just under the name
         # (y 24 of 129), everything below it down to the image's bottom edge, the

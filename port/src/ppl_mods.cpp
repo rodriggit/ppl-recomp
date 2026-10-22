@@ -8,9 +8,12 @@
 //   a new one is appended (the directory buffer holds 597 entries, the game uses 465).
 // func_8001D278 takes the file count from the directory it just read, so appended entries
 // are found by name like the others.
+// files.ini can also replace cartridge data outside the archive by address ("@654B10 =
+// file"), for data the game reads by ROM address, like the in-match panel strips.
 #include <algorithm>
 #include <cctype>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <fstream>
 #include <string>
@@ -35,6 +38,14 @@ namespace {
     };
     std::vector<ModFile> files;
     std::vector<uint8_t> data;   // the virtual area's bytes
+
+    // Cartridge data outside the archive (the in-match panel strips, docs/johto.md), replaced
+    // in place: reads that fall inside [rom, rom + size) are served from the file.
+    struct RomPatch {
+        uint32_t rom;
+        std::vector<uint8_t> bytes;
+    };
+    std::vector<RomPatch> rom_patches;
 
     uint8_t& byte(uint8_t* rdram, uint32_t addr) {
         return rdram[(addr & 0x1FFFFFFF) ^ 3];   // RDRAM holds 32-bit words in host order
@@ -99,6 +110,22 @@ namespace {
 // Entry of func_80001CAC: serve reads from the virtual area. Returns 1 when done.
 extern "C" int ppl_rom_read(uint8_t* rdram, recomp_context* ctx) {
     const uint32_t rom = (uint32_t)ctx->r4, ram = (uint32_t)ctx->r5, size = (uint32_t)ctx->r6;
+    for (const RomPatch& p : rom_patches) {
+        if (rom >= p.rom && rom - p.rom + size <= p.bytes.size()) {
+            for (uint32_t i = 0; i < size; i++) {
+                byte(rdram, ram + i) = p.bytes[rom - p.rom + i];
+            }
+            return 1;
+        }
+        if (rom < p.rom + p.bytes.size() && rom + size > p.rom) {
+            static bool reported = false;
+            if (!reported) {
+                fprintf(stderr, "[ppl] mods: read %08X+%X only partly inside the replaced ROM data at %08X; left as is\n",
+                        rom, size, p.rom);
+                reported = true;
+            }
+        }
+    }
     if (rom < virtual_rom) {
         return 0;
     }
@@ -141,8 +168,8 @@ void ppl::mods::load(const std::filesystem::path& executable_folder) {
         ppl::config::warn("[mods] campaign = " + campaign + ": could not read " + ppl::config::path_text(list));
         return;
     }
-    // files.ini: "ARCHIVE.NAME = file in the campaign folder" per line; ; and # start comments,
-    // [sections] are ignored.
+    // files.ini: "ARCHIVE.NAME = file in the campaign folder" or "@ROMADDR = file" per line;
+    // ; and # start comments, [sections] are ignored.
     std::string line;
     int number = 0;
     uint32_t added = 0;
@@ -166,6 +193,17 @@ void ppl::mods::load(const std::filesystem::path& executable_folder) {
             continue;
         }
         std::vector<uint8_t> bytes((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+        if (name[0] == '@') {   // "@ROMADDR = file": cartridge bytes replaced in place
+            char* end = nullptr;
+            const unsigned long addr = std::strtoul(name.c_str() + 1, &end, 16);
+            if (end == name.c_str() + 1 || *end != '\0' || addr + bytes.size() > virtual_rom) {
+                ppl::config::warn(where + ": expected @HEXADDRESS inside the cartridge");
+                continue;
+            }
+            rom_patches.push_back({ uint32_t(addr), std::move(bytes) });
+            added++;
+            continue;
+        }
         data.resize((data.size() + 15) & ~size_t(15));
         files.push_back({ name, uint32_t(virtual_rom + data.size()), uint32_t(bytes.size()) });
         data.insert(data.end(), bytes.begin(), bytes.end());

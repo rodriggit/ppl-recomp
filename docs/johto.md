@@ -67,6 +67,23 @@ on that background, writes the name on top (centered at x 53.5, baseline 21; "|"
 two lines at 17 and 32), mirrors the character for frame 1, quantizes each frame to 255
 colors plus transparent index 0, and writes them into a copy of CBROCK.BIF's structure.
 
+## In-match panel strips
+The pictures beside the playfield are not in the archive: one raw RGBA5551 strip per
+character id, 112 pixels wide (columns 108-111 pure green 0x07C1), at the ROM addresses
+in the table at 0x800B6340 (16 entries; 0x62AB10 for Ash, 0x654B10 for Brock, ...).
+Rows 0-191 hold the trainer in an action pose; the rest are three Pokémon panels of equal
+height, (height - 192) / 3 (Brock 66, Lt. Surge 115, Team Rocket 172), each with the
+trainer's head bottom-left and the Pokémon on the right, all over speed lines in the
+character's colors. func_8001A330 (the only reader of the table) loads a 112×150 window
+starting table2[id] / 2 rows down (table2 at 0x800B6380) and the three Pokémon BIFs.
+No table holds the panel height, so a new strip keeps its slot's size:
+`tools/panel.py ROM TEMPLATE_ID TRAINER.png OUT.BIN` builds one, and files.ini replaces
+the original by address (`@654B10 = OUT.BIN`). `--dump DIR` writes all 16 as PNG.
+
+The 12 full-screen stadium backgrounds (table at 0x800B6808, raw RGBA5551 320×232 from
+ROM 0x35C3F0, 0x24400 bytes each) are grass, rock, water and indoor fields, each by day,
+night and sunset; the s16 table at 0x800C51A0 picks one per stage.
+
 ## Characters
 Character ids follow the portrait order of OPPONENT.SBF / POKEMON.SBF / RESULT.SBF:
 
