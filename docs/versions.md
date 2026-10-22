@@ -17,6 +17,12 @@ in file order). Most are fixes that apply to any game (VI X scale, framebuffer t
 copies, buffer reservation); the 2D linear filtering and the shader list are options this
 port doesn't turn on yet.
 
+On top of those, this port's own RT64 patches in `patches/rt64/` (apply with `git apply` in
+the RT64 checkout, after mt64-recomp's):
+- `0001-xbr-video-filter.patch`: a fifth filter for enlarging the final picture,
+  `Filtering::PixelArtXBR` (Hyllian's xBR level 2, single pass, in `VideoInterfacePS.hlsl`),
+  which `filter_2d = xbr` uses. Only adds an option: games that don't pick it are unchanged.
+
 SDL2 2.30.3 (official release package, fetched by CMake on Windows).
 
 Python tools (PyPI): rabbitizer 1.16.2, spimdisasm 1.42.4.

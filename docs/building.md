@@ -75,7 +75,13 @@ The first time, pass the ROM (or drop it onto the executable):
 The runtime keeps a copy of the ROM and the FlashRAM save in
 `%APPDATA%\ppl-recomp\PPLRecomp\`, so later runs need no argument.
 
-Default controls (keyboard = controller 1, together with the first gamepad): arrows =
-stick, X = A, C = B, Z = Z, A = L, S = R, Return = Start, IJKL = C buttons, TFGH = D-pad.
-F11 or Alt+Return toggles fullscreen. `PPL_RT64_DEV=1` turns on RT64's developer mode
-(F1 inspector).
+Controls and graphics options are in `config.ini`, written with the defaults and the
+description of every option on the first run: next to the executable, or in
+`%APPDATA%\ppl-recomp\PPLRecomp\` if that folder isn't writable. Default controls
+(keyboard = controller 1, together with the first gamepad): arrows = stick, X = A, C = B,
+Z = Z, A = L, S = R, Return = Start, IJKL = C buttons, TFGH = D-pad.
+
+F11 or Alt+Return toggles fullscreen. For diagnosis: `PPL_RT64_DEV=1` turns on RT64's
+developer mode (F1 inspector), `PPL_TRACE=1` prints the RSP tasks and the VI state once
+per second, F9 dumps the next four display lists and the RDRAM, and
+`PPL_DUMP_OFFSCREEN=1` the first ones that draw outside the screen.

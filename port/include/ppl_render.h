@@ -34,6 +34,10 @@ namespace ppl::renderer {
     std::unique_ptr<ultramodern::renderer::RendererContext> create_render_context(
         uint8_t* rdram, ultramodern::renderer::WindowHandle window_handle, bool developer_mode);
 
+    // config.ini's filter_2d (rt64_context.cpp). Applies to render contexts created after the call.
+    enum class Filter2D { Xbr, Sharp, Linear, Nearest };
+    void set_2d_filter(Filter2D filter);
+
     // Registers the S2DEX commands RT64 lacks into a loaded GBI (ppl_s2dex.cpp).
     void add_s2dex_commands(RT64::GBI* gbi);
 }

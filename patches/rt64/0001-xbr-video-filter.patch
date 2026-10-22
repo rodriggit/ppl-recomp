@@ -1,0 +1,252 @@
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -545,6 +545,7 @@
+ build_pixel_shader(  rt64 "src/shaders/TextureResolvePS.hlsl" "src/shaders/TextureResolveSamples8XPS.hlsl" "-D SAMPLES_8X")
+ build_pixel_shader(  rt64 "src/shaders/VideoInterfacePS.hlsl" "src/shaders/VideoInterfacePSRegular.hlsl")
+ build_pixel_shader(  rt64 "src/shaders/VideoInterfacePS.hlsl" "src/shaders/VideoInterfacePSPixel.hlsl" "-D PIXEL_ANTIALIASING")
++build_pixel_shader(  rt64 "src/shaders/VideoInterfacePS.hlsl" "src/shaders/VideoInterfacePSXBR.hlsl" "-D PIXEL_XBR")
+ build_vertex_shader( rt64 "src/shaders/FullScreenVS.hlsl")
+ build_vertex_shader( rt64 "src/shaders/Im3DVS.hlsl")
+ build_pixel_shader(  rt64 "src/shaders/ComposePS.hlsl")
+--- a/src/common/rt64_user_configuration.h
++++ b/src/common/rt64_user_configuration.h
+@@ -45,6 +45,7 @@
+             Nearest,
+             Linear,
+             AntiAliasedPixelScaling,
++            PixelArtXBR,
+             OptionCount
+         };
+ 
+@@ -143,7 +144,8 @@
+     NLOHMANN_JSON_SERIALIZE_ENUM(UserConfiguration::Filtering, {
+         { UserConfiguration::Filtering::Nearest, "Nearest" },
+         { UserConfiguration::Filtering::Linear, "Linear" },
+-        { UserConfiguration::Filtering::AntiAliasedPixelScaling, "AntiAliasedPixelScaling" }
++        { UserConfiguration::Filtering::AntiAliasedPixelScaling, "AntiAliasedPixelScaling" },
++        { UserConfiguration::Filtering::PixelArtXBR, "PixelArtXBR" }
+     });
+ 
+     NLOHMANN_JSON_SERIALIZE_ENUM(UserConfiguration::Upscale2D, {
+--- a/src/hle/rt64_state.cpp
++++ b/src/hle/rt64_state.cpp
+@@ -2109,7 +2109,7 @@
+ 
+                     ImGui::EndDisabled();
+ 
+-                    genConfigChanged = ImGui::Combo("Filtering", reinterpret_cast<int *>(&userConfig.filtering), "Nearest\0Linear\0Pixel Scaling\0") || genConfigChanged;
++                    genConfigChanged = ImGui::Combo("Filtering", reinterpret_cast<int *>(&userConfig.filtering), "Nearest\0Linear\0Pixel Scaling\0Pixel Art (xBR)\0") || genConfigChanged;
+ 
+                     resConfigChanged = ImGui::Combo("Aspect Ratio Mode", reinterpret_cast<int *>(&userConfig.aspectRatio), "Original\0Expand\0Manual\0") || resConfigChanged;
+                     const bool manualAspectRatio = (userConfig.aspectRatio == UserConfiguration::AspectRatio::Manual);
+--- a/src/render/rt64_shader_library.cpp
++++ b/src/render/rt64_shader_library.cpp
+@@ -46,6 +46,7 @@
+ #include "shaders/TextureResolveSamples8XPS.hlsl.spirv.h"
+ #include "shaders/VideoInterfacePSRegular.hlsl.spirv.h"
+ #include "shaders/VideoInterfacePSPixel.hlsl.spirv.h"
++#include "shaders/VideoInterfacePSXBR.hlsl.spirv.h"
+ #include "shaders/FullScreenVS.hlsl.spirv.h"
+ #include "shaders/Im3DVS.hlsl.spirv.h"
+ #include "shaders/ComposePS.hlsl.spirv.h"
+@@ -92,6 +93,7 @@
+ #   include "shaders/TextureResolveSamples8XPS.hlsl.dxil.h"
+ #   include "shaders/VideoInterfacePSRegular.hlsl.dxil.h"
+ #   include "shaders/VideoInterfacePSPixel.hlsl.dxil.h"
++#   include "shaders/VideoInterfacePSXBR.hlsl.dxil.h"
+ #   include "shaders/FullScreenVS.hlsl.dxil.h"
+ #   include "shaders/Im3DVS.hlsl.dxil.h"
+ #   include "shaders/ComposePS.hlsl.dxil.h"
+@@ -137,6 +139,7 @@
+ #   include "shaders/TextureResolveSamples8XPS.hlsl.metal.h"
+ #   include "shaders/VideoInterfacePSRegular.hlsl.metal.h"
+ #   include "shaders/VideoInterfacePSPixel.hlsl.metal.h"
++#   include "shaders/VideoInterfacePSXBR.hlsl.metal.h"
+ #   include "shaders/FullScreenVS.hlsl.metal.h"
+ #   include "shaders/Im3DVS.hlsl.metal.h"
+ #   include "shaders/ComposePS.hlsl.metal.h"
+@@ -587,6 +590,7 @@
+         {
+             std::unique_ptr<RenderShader> regularShader = device->createShader(CREATE_SHADER_INPUTS(VideoInterfacePSRegularBlobDXIL, VideoInterfacePSRegularBlobSPIRV, VideoInterfacePSRegularBlobMSL, "PSMain", shaderFormat));
+             std::unique_ptr<RenderShader> pixelShader = device->createShader(CREATE_SHADER_INPUTS(VideoInterfacePSPixelBlobDXIL, VideoInterfacePSPixelBlobSPIRV, VideoInterfacePSPixelBlobMSL, "PSMain", shaderFormat));
++            std::unique_ptr<RenderShader> xbrShader = device->createShader(CREATE_SHADER_INPUTS(VideoInterfacePSXBRBlobDXIL, VideoInterfacePSXBRBlobSPIRV, VideoInterfacePSXBRBlobMSL, "PSMain", shaderFormat));
+ 
+             VideoInterfaceDescriptorSet nearestDescriptorSet(samplerLibrary.nearest.borderBorder.get());
+             VideoInterfaceDescriptorSet linearDescriptorSet(samplerLibrary.linear.borderBorder.get());
+@@ -611,6 +615,7 @@
+             layoutBuilder.end();
+             videoInterfaceLinear.pipelineLayout = layoutBuilder.create(device);
+             videoInterfacePixel.pipelineLayout = layoutBuilder.create(device);
++            videoInterfaceXBR.pipelineLayout = layoutBuilder.create(device);
+ 
+             pipelineDesc.pipelineLayout = videoInterfaceLinear.pipelineLayout.get();
+             videoInterfaceLinear.pipeline = device->createGraphicsPipeline(pipelineDesc);
+@@ -618,6 +623,10 @@
+             pipelineDesc.pixelShader = pixelShader.get();
+             pipelineDesc.pipelineLayout = videoInterfacePixel.pipelineLayout.get();
+             videoInterfacePixel.pipeline = device->createGraphicsPipeline(pipelineDesc);
++
++            pipelineDesc.pixelShader = xbrShader.get();
++            pipelineDesc.pipelineLayout = videoInterfaceXBR.pipelineLayout.get();
++            videoInterfaceXBR.pipeline = device->createGraphicsPipeline(pipelineDesc);
+         }
+     }
+ 
+--- a/src/render/rt64_shader_library.h
++++ b/src/render/rt64_shader_library.h
+@@ -59,6 +59,7 @@
+         ShaderRecord videoInterfaceLinear;
+         ShaderRecord videoInterfaceNearest;
+         ShaderRecord videoInterfacePixel;
++        ShaderRecord videoInterfaceXBR;
+ 
+         ShaderLibrary(bool usesHDR, bool usesHardwareResolve);
+         ~ShaderLibrary();
+--- a/src/render/rt64_vi_renderer.cpp
++++ b/src/render/rt64_vi_renderer.cpp
+@@ -53,6 +53,10 @@
+             shader = &p.shaderLibrary->videoInterfacePixel;
+             sampler = p.shaderLibrary->samplerLibrary.linear.borderBorder.get();
+             break;
++        case UserConfiguration::Filtering::PixelArtXBR:
++            shader = &p.shaderLibrary->videoInterfaceXBR;
++            sampler = p.shaderLibrary->samplerLibrary.linear.borderBorder.get();
++            break;
+         case UserConfiguration::Filtering::Linear:
+         default:
+             shader = &p.shaderLibrary->videoInterfaceLinear;
+--- a/src/shaders/VideoInterfacePS.hlsl
++++ b/src/shaders/VideoInterfacePS.hlsl
+@@ -32,8 +32,131 @@
+     return SampleInput(uvTexspace / gConstants.textureResolution);
+ }
+ 
++#ifdef PIXEL_XBR
++//
++// Pixel art scaling: Hyllian's xBR level 2 (single pass), smoothing the edges it detects
++// at 30, 45 and 60 degrees over one window pixel. Booleans are kept as 0/1 vectors (HLSL
++// 2021 has no && or || on vectors).
++//
++static const float XbrYWeight = 48.0f;
++static const float XbrEqThreshold = 15.0f;
++static const float XbrLv2Coefficient = 2.0f;
++
++float3 XbrTexel(float2 texel) {
++    return gInput.Load(int3(clamp(texel, float2(0.0f, 0.0f), gConstants.videoResolution - 1.0f), 0)).rgb;
++}
++
++float4 XbrLuma(float3 c0, float3 c1, float3 c2, float3 c3) {
++    const float3 w = XbrYWeight * float3(0.299f, 0.587f, 0.114f);
++    return float4(dot(c0, w), dot(c1, w), dot(c2, w), dot(c3, w));
++}
++
++float4 XbrDf(float4 a, float4 b) {
++    return abs(a - b);
++}
++
++float XbrColorDf(float3 a, float3 b) {
++    const float3 d = abs(a - b);
++    return d.r + d.g + d.b;
++}
++
++float4 XbrEq(float4 a, float4 b) {
++    return float4(XbrDf(a, b) < XbrEqThreshold);
++}
++
++float4 XbrNe(float4 a, float4 b) {
++    return float4(a != b);
++}
++
++float4 XbrWeightedDistance(float4 a, float4 b, float4 c, float4 d, float4 e, float4 f, float4 g, float4 h) {
++    return XbrDf(a, b) + XbrDf(a, c) + XbrDf(d, e) + XbrDf(d, f) + 4.0f * XbrDf(g, h);
++}
++
++float4 PixelArtXbr(float2 uv) {
++    const float2 pos = uv * gConstants.videoResolution;
++    if (any(pos < 0.0f) || any(pos >= gConstants.videoResolution)) {
++        return float4(0.0f, 0.0f, 0.0f, 1.0f);
++    }
++
++    const float2 fp = frac(pos);
++    const float2 e0 = floor(pos);
++
++    //     A1 B1 C1
++    //  A0  A  B  C C4
++    //  D0  D  E  F F4
++    //  G0  G  H  I I4
++    //     G5 H5 I5
++    const float3 A1 = XbrTexel(e0 + float2(-1, -2)), B1 = XbrTexel(e0 + float2(0, -2)), C1 = XbrTexel(e0 + float2(1, -2));
++    const float3 A0 = XbrTexel(e0 + float2(-2, -1)), A = XbrTexel(e0 + float2(-1, -1)), B = XbrTexel(e0 + float2(0, -1));
++    const float3 C = XbrTexel(e0 + float2(1, -1)), C4 = XbrTexel(e0 + float2(2, -1));
++    const float3 D0 = XbrTexel(e0 + float2(-2, 0)), D = XbrTexel(e0 + float2(-1, 0)), E = XbrTexel(e0);
++    const float3 F = XbrTexel(e0 + float2(1, 0)), F4 = XbrTexel(e0 + float2(2, 0));
++    const float3 G0 = XbrTexel(e0 + float2(-2, 1)), G = XbrTexel(e0 + float2(-1, 1)), H = XbrTexel(e0 + float2(0, 1));
++    const float3 I = XbrTexel(e0 + float2(1, 1)), I4 = XbrTexel(e0 + float2(2, 1));
++    const float3 G5 = XbrTexel(e0 + float2(-1, 2)), H5 = XbrTexel(e0 + float2(0, 2)), I5 = XbrTexel(e0 + float2(1, 2));
++
++    // Each component is one corner of E: x bottom right, y top right, z top left, w bottom left.
++    const float4 b = XbrLuma(B, D, H, F);
++    const float4 c = XbrLuma(C, A, G, I);
++    const float4 e = XbrLuma(E, E, E, E);
++    const float4 d = b.yzwx;
++    const float4 f = b.wxyz;
++    const float4 g = c.zwxy;
++    const float4 h = b.zwxy;
++    const float4 i = c.wxyz;
++    const float4 i4 = XbrLuma(I4, C1, A0, G5);
++    const float4 i5 = XbrLuma(I5, C4, A1, G0);
++    const float4 h5 = XbrLuma(H5, F4, B1, D0);
++    const float4 f4 = h5.yzwx;
++
++    // Lines of 45, 30 and 60 degrees across each corner; past them the corner is interpolated.
++    const float4 Ao = float4(1.0f, -1.0f, -1.0f, 1.0f);
++    const float4 Bo = float4(1.0f, 1.0f, -1.0f, -1.0f);
++    const float4 Co = float4(1.5f, 0.5f, -0.5f, 0.5f);
++    const float4 Bx = float4(0.5f, 2.0f, -0.5f, -2.0f);
++    const float4 Cx = float4(1.0f, 1.0f, -0.5f, 0.0f);
++    const float4 By = float4(2.0f, 0.5f, -2.0f, -0.5f);
++    const float4 Cy = float4(2.0f, 0.0f, -1.0f, 0.5f);
++    const float4 fx = Ao * fp.y + Bo * fp.x;
++    const float4 fxLeft = Ao * fp.y + Bx * fp.x;
++    const float4 fxUp = Ao * fp.y + By * fp.x;
++
++    // The blend across a line spans one window pixel, in texels.
++    const float2 texelsPerPixel = max(fwidth(pos), float2(1e-4f, 1e-4f));
++    const float4 delta = max(texelsPerPixel.x, texelsPerPixel.y).xxxx;
++    const float4 deltaLeft = float4(0.5f, 1.0f, 0.5f, 1.0f) * delta;
++    const float4 deltaUp = deltaLeft.yxwz;
++
++    const float4 restrictionLv1 = XbrNe(e, f) * XbrNe(e, h) * saturate(
++        (1.0f - XbrEq(f, b)) * (1.0f - XbrEq(h, d)) +
++        XbrEq(e, i) * (1.0f - XbrEq(f, i4)) * (1.0f - XbrEq(h, i5)) +
++        XbrEq(e, g) + XbrEq(e, c));
++    const float4 restrictionLv2Left = XbrNe(e, g) * XbrNe(d, g);
++    const float4 restrictionLv2Up = XbrNe(e, c) * XbrNe(b, c);
++
++    const float4 edr = float4(XbrWeightedDistance(e, c, g, i, h5, f4, h, f) < XbrWeightedDistance(h, d, i5, f, i4, b, e, i)) * restrictionLv1;
++    const float4 edrLeft = float4((XbrLv2Coefficient * XbrDf(f, g)) <= XbrDf(h, c)) * restrictionLv2Left * edr;
++    const float4 edrUp = float4(XbrDf(f, g) >= (XbrLv2Coefficient * XbrDf(h, c))) * restrictionLv2Up * edr;
++
++    const float4 fx45 = edr * saturate((fx + delta - Co) / (2.0f * delta));
++    const float4 fx30 = edrLeft * saturate((fxLeft + deltaLeft - Cx) / (2.0f * deltaLeft));
++    const float4 fx60 = edrUp * saturate((fxUp + deltaUp - Cy) / (2.0f * deltaUp));
++    const float4 amount = max(max(fx30, fx60), fx45);
++    const float4 px = float4(XbrDf(e, f) <= XbrDf(e, h));
++
++    float3 res1 = lerp(E, lerp(H, F, px.x), amount.x);
++    res1 = lerp(res1, lerp(B, D, px.z), amount.z);
++    float3 res2 = lerp(E, lerp(F, B, px.y), amount.y);
++    res2 = lerp(res2, lerp(D, H, px.w), amount.w);
++    const float3 res = lerp(res1, res2, step(XbrColorDf(E, res1), XbrColorDf(E, res2)));
++    return float4(pow(res, gConstants.gamma), 1.0f);
++}
++#endif
++
+ float4 PSMain(in float4 pos : SV_Position, in float2 uv : TEXCOORD0) : SV_TARGET {
+-#ifdef PIXEL_ANTIALIASING
++#if defined(PIXEL_XBR)
++    return PixelArtXbr(uv);
++#elif defined(PIXEL_ANTIALIASING)
+     return PixelAntialiasing(uv);
+ #else
+     return SampleInput((uv / gConstants.textureResolution) * gConstants.videoResolution);

@@ -63,6 +63,40 @@ static RT64::UserConfiguration::InternalColorFormat to_rt64(ur::HighPrecisionFra
     }
 }
 
+static ppl::renderer::Filter2D filter_2d = ppl::renderer::Filter2D::Xbr;
+
+void ppl::renderer::set_2d_filter(Filter2D filter) {
+    filter_2d = filter;
+}
+
+// The game is all 2D, nearly all of it drawn unscaled (copy mode backgrounds, sprites at 1:1),
+// and its big images are loaded in strips of a few lines (TMEM). Filtering each draw leaves a
+// seam at every strip, as the filter can't reach the next strip's first line. So xbr, sharp
+// and linear compose the frame at the N64's resolution, as the console does, and filter the
+// whole picture when RT64 enlarges it to the window (the resolution option doesn't apply):
+// xbr with xBR level 2, which rounds off the edges it finds (patches/rt64/0001), sharp with
+// RT64's pixel scaling (nearest inside each pixel, a blend one window pixel wide at their
+// edges, as sharp-bilinear), linear with plain bilinear. Nearest draws at the chosen
+// resolution, the 2D included (RT64's default, ScaledOnly, would draw it at the N64's and
+// enlarge it), with sharp pixels.
+static void set_2d_user_config(RT64::Application* application) {
+    using RT64::UserConfiguration;
+    auto& user = application->userConfig;
+    if (filter_2d == ppl::renderer::Filter2D::Nearest) {
+        user.upscale2D = UserConfiguration::Upscale2D::All;
+        user.filtering = UserConfiguration::Filtering::AntiAliasedPixelScaling;
+        return;
+    }
+    user.resolution = UserConfiguration::Resolution::Manual;
+    user.resolutionMultiplier = 1;
+    user.downsampleMultiplier = 1;
+    switch (filter_2d) {
+        case ppl::renderer::Filter2D::Xbr:    user.filtering = UserConfiguration::Filtering::PixelArtXBR; break;
+        case ppl::renderer::Filter2D::Linear: user.filtering = UserConfiguration::Filtering::Linear; break;
+        default:                              user.filtering = UserConfiguration::Filtering::AntiAliasedPixelScaling; break;
+    }
+}
+
 static void set_application_user_config(RT64::Application* application, const ur::GraphicsConfig& config) {
     switch (config.res_option) {
         default:
@@ -102,6 +136,7 @@ static void set_application_user_config(RT64::Application* application, const ur
     application->userConfig.refreshRateTarget = config.rr_manual_value;
     application->userConfig.internalColorFormat = to_rt64(config.hpfb_option);
     application->userConfig.displayBuffering = RT64::UserConfiguration::DisplayBuffering::Triple;
+    set_2d_user_config(application);
 }
 
 static ur::SetupResult map_setup_result(RT64::Application::SetupResult result) {

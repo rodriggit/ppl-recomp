@@ -1,6 +1,7 @@
 // PPLRecomp: registers the game with the runtime and wires SDL2 (window, audio, input) and
 // RT64 (rendering). Minimal by design: no menu, the ROM path is given on the command line
-// once (or the ROM is dropped onto the executable) and stored by the runtime.
+// once (or the ROM is dropped onto the executable) and stored by the runtime; controls and
+// graphics options come from config.ini (ppl_config.cpp).
 #include <algorithm>
 #include <array>
 #include <atomic>
@@ -28,6 +29,7 @@
 #include "librecomp/rsp.hpp"
 #include "xxHash/xxh3.h"
 
+#include "ppl_config.h"
 #include "ppl_render.h"
 #include "ppl_trace.h"
 
@@ -64,8 +66,8 @@ namespace btn {
 constexpr int num_ports = 4;
 constexpr float stick_range = 85.0f / 127.0f;   // full deflection of an original stick
 constexpr float axis_press = 0.5f;              // a stick direction or trigger counts as pressed past this
-constexpr float stick_deadzone = 0.15f;
 
+// Controls from config.ini ([keyboard], [gamepad]): one binding per N64 button or stick direction.
 enum StickDir { STICK_UP, STICK_DOWN, STICK_LEFT, STICK_RIGHT, STICK_NONE };
 
 struct PadInput {
@@ -74,37 +76,36 @@ struct PadInput {
     float sign;     // axes: +1 or -1
 };
 
-// One binding per N64 button or stick direction: keys by SDL name, gamepad inputs by SDL
-// game controller name (axes with + or -, triggers without).
 struct Binding {
+    const char* name;
     uint16_t mask;
     StickDir stick;
-    std::vector<const char*> key_names;
-    std::vector<const char*> pad_names;
     std::vector<SDL_Scancode> keys;
     std::vector<PadInput> pad;
 };
 
-static std::vector<Binding> bindings{
-    { btn::A, STICK_NONE, { "X" }, { "a" } },
-    { btn::B, STICK_NONE, { "C" }, { "x", "b" } },
-    { btn::Z, STICK_NONE, { "Z" }, { "lefttrigger" } },
-    { btn::L, STICK_NONE, { "A" }, { "leftshoulder" } },
-    { btn::R, STICK_NONE, { "S" }, { "rightshoulder", "righttrigger" } },
-    { btn::START, STICK_NONE, { "Return" }, { "start" } },
-    { btn::CU, STICK_NONE, { "I" }, { "righty-" } },
-    { btn::CD, STICK_NONE, { "K" }, { "righty+" } },
-    { btn::CL, STICK_NONE, { "J" }, { "rightx-" } },
-    { btn::CR, STICK_NONE, { "L" }, { "rightx+" } },
-    { btn::DU, STICK_NONE, { "T" }, { "dpup" } },
-    { btn::DD, STICK_NONE, { "G" }, { "dpdown" } },
-    { btn::DL, STICK_NONE, { "F" }, { "dpleft" } },
-    { btn::DR, STICK_NONE, { "H" }, { "dpright" } },
-    { 0, STICK_UP, { "Up" }, {} },
-    { 0, STICK_DOWN, { "Down" }, {} },
-    { 0, STICK_LEFT, { "Left" }, {} },
-    { 0, STICK_RIGHT, { "Right" }, {} },
-};
+static std::array<Binding, 18> bindings{ {
+    { "a", btn::A, STICK_NONE }, { "b", btn::B, STICK_NONE }, { "z", btn::Z, STICK_NONE },
+    { "l", btn::L, STICK_NONE }, { "r", btn::R, STICK_NONE }, { "start", btn::START, STICK_NONE },
+    { "c_up", btn::CU, STICK_NONE }, { "c_down", btn::CD, STICK_NONE },
+    { "c_left", btn::CL, STICK_NONE }, { "c_right", btn::CR, STICK_NONE },
+    { "dpad_up", btn::DU, STICK_NONE }, { "dpad_down", btn::DD, STICK_NONE },
+    { "dpad_left", btn::DL, STICK_NONE }, { "dpad_right", btn::DR, STICK_NONE },
+    { "stick_up", 0, STICK_UP }, { "stick_down", 0, STICK_DOWN },
+    { "stick_left", 0, STICK_LEFT }, { "stick_right", 0, STICK_RIGHT },
+} };
+
+static SDL_GameControllerAxis pad_stick_x = SDL_CONTROLLER_AXIS_LEFTX;
+static SDL_GameControllerAxis pad_stick_y = SDL_CONTROLLER_AXIS_LEFTY;
+static float stick_deadzone = 0.15f;
+
+static bool parse_yes_no(const std::string& section, const char* key, bool fallback) {
+    const std::string v = ppl::config::get(section, key);
+    if (v == "yes" || v == "true" || v == "1" || v == "on") return true;
+    if (v == "no" || v == "false" || v == "0" || v == "off") return false;
+    ppl::config::warn("[" + section + "] " + key + ": expected yes or no, got \"" + v + "\"");
+    return fallback;
+}
 
 static bool parse_pad_input(const std::string& name, PadInput& out) {
     std::string base = name;
@@ -130,31 +131,46 @@ static bool parse_pad_input(const std::string& name, PadInput& out) {
 
 static void load_controls() {
     for (Binding& binding : bindings) {
-        for (const char* key : binding.key_names) {
-            const SDL_Scancode code = SDL_GetScancodeFromName(key);
-            if (code != SDL_SCANCODE_UNKNOWN) {
+        for (const std::string& key : ppl::config::get_list("keyboard", binding.name)) {
+            const SDL_Scancode code = SDL_GetScancodeFromName(key.c_str());
+            if (code == SDL_SCANCODE_UNKNOWN) {
+                ppl::config::warn(std::string("[keyboard] ") + binding.name + ": unknown key \"" + key + "\"");
+            } else {
                 binding.keys.push_back(code);
             }
         }
-        for (const char* input : binding.pad_names) {
+        for (const std::string& input : ppl::config::get_list("gamepad", binding.name)) {
             PadInput pad;
             if (parse_pad_input(input, pad)) {
                 binding.pad.push_back(pad);
+            } else {
+                ppl::config::warn(std::string("[gamepad] ") + binding.name + ": unknown input \"" + input + "\"");
             }
         }
+    }
+    const std::string stick = ppl::config::get("gamepad", "stick");
+    if (stick == "right") {
+        pad_stick_x = SDL_CONTROLLER_AXIS_RIGHTX;
+        pad_stick_y = SDL_CONTROLLER_AXIS_RIGHTY;
+    } else if (stick != "left") {
+        ppl::config::warn("[gamepad] stick: expected left or right, got \"" + stick + "\"");
+    }
+    const std::string deadzone = ppl::config::get("gamepad", "deadzone");
+    try {
+        stick_deadzone = std::clamp(std::stof(deadzone), 0.0f, 0.9f);
+    } catch (const std::exception&) {
+        ppl::config::warn("[gamepad] deadzone: expected a number, got \"" + deadzone + "\"");
     }
 }
 
 struct PadState {
     bool connected = false;
-    bool rumble_pak = false;
     uint16_t buttons = 0;
     float x = 0.0f, y = 0.0f;
 };
 
 static std::mutex input_mutex;
 static std::array<PadState, num_ports> pads;
-static std::array<std::atomic_bool, num_ports> rumble_requested;
 static std::array<SDL_GameController*, num_ports> gamepads{};
 
 static void open_gamepad(int device_index) {
@@ -212,13 +228,12 @@ static void read_gamepad(SDL_GameController* pad, PadState& s) {
             }
         }
     }
-    float x = axis(pad, SDL_CONTROLLER_AXIS_LEFTX), y = -axis(pad, SDL_CONTROLLER_AXIS_LEFTY);
+    float x = axis(pad, pad_stick_x), y = -axis(pad, pad_stick_y);
     if (x != 0.0f || y != 0.0f) {
         s.x = x * stick_range;
         s.y = y * stick_range;
     }
     apply_digital_stick(dirs, s);
-    s.rumble_pak |= SDL_GameControllerHasRumble(pad) == SDL_TRUE;
 }
 
 // The keyboard plays on port 1, together with the first gamepad.
@@ -246,7 +261,6 @@ static void update_input() {
         }
         next[i].connected = true;
         read_gamepad(gamepads[i], next[i]);
-        SDL_GameControllerRumble(gamepads[i], rumble_requested[i] ? 0xFFFF : 0, rumble_requested[i] ? 0xFFFF : 0, 100);
     }
     std::lock_guard lock{ input_mutex };
     pads = next;
@@ -266,19 +280,14 @@ static bool get_input(int port, uint16_t* buttons, float* x, float* y) {
     return true;
 }
 
-static void set_rumble(int port, bool on) {
-    if (port >= 0 && port < num_ports) {
-        rumble_requested[port] = on;
-    }
-}
-
+// The game uses no controller pak (docs/phase1.md): only the controllers themselves.
 static ultramodern::input::connected_device_info_t get_connected_device_info(int port) {
     using namespace ultramodern::input;
     std::lock_guard lock{ input_mutex };
     if (port < 0 || port >= num_ports || !pads[port].connected) {
         return { Device::None, Pak::None };
     }
-    return { Device::Controller, pads[port].rumble_pak ? Pak::RumblePak : Pak::None };
+    return { Device::Controller, Pak::None };
 }
 
 // ---------------------------------------------------------------------------------------
@@ -519,15 +528,36 @@ static std::filesystem::path config_folder() {
     return path;
 }
 
-static ultramodern::renderer::GraphicsConfig default_graphics() {
+// [graphics] of config.ini.
+static ultramodern::renderer::GraphicsConfig load_graphics() {
     namespace ur = ultramodern::renderer;
+    auto pick = [](const char* key, std::initializer_list<std::pair<const char*, int>> choices, int fallback) {
+        const std::string v = ppl::config::get("graphics", key);
+        std::string names;
+        for (const auto& [name, value] : choices) {
+            if (v == name) return value;
+            names += names.empty() ? name : std::string(", ") + name;
+        }
+        ppl::config::warn(std::string("[graphics] ") + key + ": expected " + names + ", got \"" + v + "\"");
+        return fallback;
+    };
+
     ur::GraphicsConfig graphics{};
     // PPL_RT64_DEV=1: RT64's developer mode (F1 inspector, RDP warnings on the console)
     graphics.developer_mode = std::getenv("PPL_RT64_DEV") != nullptr;
-    graphics.res_option = ur::Resolution::Auto;
-    graphics.wm_option = ur::WindowMode::Windowed;
+    graphics.res_option = ur::Resolution(pick("resolution", {
+        { "auto", int(ur::Resolution::Auto) }, { "original", int(ur::Resolution::Original) },
+        { "2x", int(ur::Resolution::Original2x) } }, int(ur::Resolution::Auto)));
+    graphics.wm_option = parse_yes_no("graphics", "fullscreen", false) ? ur::WindowMode::Fullscreen : ur::WindowMode::Windowed;
+    // All 2D, drawn with rectangles: multisampling has nothing to smooth.
     graphics.msaa_option = ur::Antialiasing::None;
-    graphics.api_option = ur::GraphicsApi::Auto;
+    graphics.api_option = ur::GraphicsApi(pick("api", {
+        { "auto", int(ur::GraphicsApi::Auto) }, { "d3d12", int(ur::GraphicsApi::D3D12) },
+        { "vulkan", int(ur::GraphicsApi::Vulkan) } }, int(ur::GraphicsApi::Auto)));
+    using ppl::renderer::Filter2D;
+    ppl::renderer::set_2d_filter(Filter2D(pick("filter_2d", {
+        { "xbr", int(Filter2D::Xbr) }, { "sharp", int(Filter2D::Sharp) }, { "linear", int(Filter2D::Linear) },
+        { "nearest", int(Filter2D::Nearest) } }, int(Filter2D::Xbr))));
     graphics.hr_option = ur::HUDRatioMode::Original;
     graphics.ar_option = ur::AspectRatio::Original;
     graphics.rr_option = ur::RefreshRate::Original;
@@ -548,6 +578,8 @@ int main(int argc, char** argv) {
     init_audio();
 
     recomp::register_config_path(config_folder());
+    const std::filesystem::path config_path = ppl::config::load(config_folder());
+    fprintf(stderr, "[ppl] settings: %s\n", config_path.empty() ? "(defaults)" : ppl::config::path_text(config_path).c_str());
     load_controls();
 
     recomp::GameEntry game{
@@ -586,7 +618,13 @@ int main(int argc, char** argv) {
         return EXIT_FAILURE;
     }
 
-    ultramodern::renderer::set_graphics_config(default_graphics());
+    ultramodern::renderer::set_graphics_config(load_graphics());
+    if (!ppl::config::warnings().empty()) {
+        const std::string msg = "Some settings in " + ppl::config::path_text(config_path) +
+                                " were not understood and use their defaults:\n\n" + ppl::config::warnings();
+        fprintf(stderr, "%s", msg.c_str());
+        SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_WARNING, app_name, msg.c_str(), nullptr);
+    }
 
     recomp::rsp::callbacks_t rsp_callbacks{
         .get_rsp_microcode = get_rsp_microcode,
@@ -607,7 +645,7 @@ int main(int argc, char** argv) {
     ultramodern::input::callbacks_t input_callbacks{
         .poll_input = nullptr,
         .get_input = get_input,
-        .set_rumble = set_rumble,
+        .set_rumble = nullptr,
         .get_connected_device_info = get_connected_device_info,
     };
     ultramodern::events::callbacks_t events_callbacks{
