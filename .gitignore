@@ -4,6 +4,9 @@
 *.v64
 source/
 
+# mod assets (Nintendo/Game Freak art, voices) never go in the repo
+mods/
+
 # Python env
 .venv/
 
@@ -21,3 +24,6 @@ hd*_0x*.raw
 
 # editor settings
 .vscode/
+
+# private campaign plans
+docs/johto-plan.md
