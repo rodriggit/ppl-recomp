@@ -1,4 +1,4 @@
-// Mod files in the game's file archive (docs/johto.md). Every archive read goes through
+// Mod files in the game's file archive (docs/custom-stadium.md). Every archive read goes through
 // func_80001CAC(rom, ram, size), which copies cartridge bytes to RAM; the port hooks it twice
 // (tools/gen_config.py MOD_HOOKS):
 // - on entry, reads from the virtual area at 0x02000000 (past the 32 MiB cartridge) are
@@ -39,7 +39,7 @@ namespace {
     std::vector<ModFile> files;
     std::vector<uint8_t> data;   // the virtual area's bytes
 
-    // Cartridge data outside the archive (the in-match panel strips, docs/johto.md), replaced
+    // Cartridge data outside the archive (the in-match panel strips, docs/custom-stadium.md), replaced
     // in place: reads that fall inside [rom, rom + size) are served from the file.
     struct RomPatch {
         uint32_t rom;

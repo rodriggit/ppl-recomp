@@ -24,3 +24,6 @@ hd*_0x*.raw
 
 # editor settings
 .vscode/
+
+# private campaign plans
+docs/johto-plan.md

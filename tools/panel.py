@@ -12,7 +12,7 @@ panel.py ROM ID TRAINER_IMAGE OUT_PREFIX [--crop X,Y,W,H] [--pokemon IMG1,IMG2,I
     the figure shifted toward its left). --theme: the dark and light colors of the
     speed-line background. --preview: both strips and the match boxes they make.
 
-Strips (docs/johto.md): raw RGBA5551, 112 pixels wide, columns 108-111 pure green (0x07C1),
+Strips (docs/custom-stadium.md): raw RGBA5551, 112 pixels wide, columns 108-111 pure green (0x07C1),
 one per character id in two tables (16 entries, 15 = the final rival):
 - 0x800B6340, left side: the whole 192-row trainer picture, then three Pokémon panels;
 - 0x800B6950, right side (mirrored): the picture's last 192 - P rows, then three panels.

@@ -1,8 +1,27 @@
-# Johto campaign — research
+# Custom Stadium
 
-Goal: a "Johto" campaign for the 1P Stadium (8 Johto leaders, Elite Four, Lance), as a
-port-only mod (C++ hooks over recompiled functions, assets from a `mods/` folder that is
-not under version control).
+Goal: let modders replace the 1P Stadium's opponents and their Pokémon with a campaign
+of their own, as a port-only mod (C++ hooks over recompiled functions). The repository
+holds the port support, the tools and this research; the art comes from each modder,
+and anything taken from the game is extracted from the user's own ROM. Campaign assets
+live in a `mods/` folder that is not under version control.
+
+## Making a campaign
+1. Build the portrait kit from your ROM: `tools/portrait.py kit ROM mods/kit`.
+2. Make the files (see the sections below): portraits with `tools/portrait.py make`,
+   in-match panel strips with `tools/panel.py`, other images with `tools/bif.py`.
+3. Put them in `mods/<campaign>/` with a `files.ini`, one line per file:
+   - `NAME.BIF = file`: replaces that archive file, or adds it if the game has none by
+     that name (names up to 15 characters; files relative to the campaign folder);
+   - `@ROMADDR = file`: replaces cartridge data the game reads by address (hex), like
+     the in-match panel strips (`@654B10 = brock_l.bin`).
+4. In the port's `config.ini`, section `[mods]`: `campaign = <campaign>` and
+   `folder = ` the folder that holds the campaigns (relative paths start at the
+   executable's folder). An empty `campaign` plays the original game.
+
+A campaign reuses the 15 character slots (see Characters): it swaps each slot's files
+(portrait, silhouette, the three Pokémon and their labels, scene text) instead of adding
+characters.
 
 ## BIF images
 `tools/bif.py ROM --survey` lists every frame; `tools/bif.py ROM NAME.BIF [OUT_DIR]`
@@ -125,7 +144,6 @@ Character ids follow the portrait order of OPPONENT.SBF / POKEMON.SBF / RESULT.S
   archive; the code never names `CBROCK.BIF` etc. directly: the SBF scenes do.
 - func_80013FB4 (Pokémon pick, scene 1PPK-PICK) reads the player characters from
   0x800B5A10 (s16 each) and loads the three Pokémon of each.
-- Scyther (scyther.bif / scyttext.bif) already exists.
 
 ## Stadium flow
 - 0x801A6D9C: current stage; 0x801A6D98 == 5 seems to be the 1P Stadium mode
@@ -158,14 +176,6 @@ class 0x18 = uppercase (code 1–26 = A–Z), 0x1C = lowercase, 0x00 = space (1)
 break (2), 0x10 = punctuation (0x0D `'`, 0x0E `,`, 0x0F `.`, 0x01 `!`; 0x10 is `?`,
 0x06 `-`, 0x0A `:`, 0x0B `—` by context). The parser is not located yet (its error
 message is "screenLoad: TEXT has internal NULL-character", ROM 0xC4DC8).
-
-## Consequences for the Johto campaign
-- Kanto has exactly 13 opponents besides Ash and Gary (ids 2–14), the same count as
-  Johto (8 leaders + Will, Koga, Bruno, Karen, Lance). Stages 2–9 can hold the 8 Johto
-  leaders and stages 10–14 the Elite Four and Lance, reusing the 15 character slots:
-  a Johto run swaps the per-character data (portrait/silhouette file names, the three
-  Pokémon and labels, the TRANSITION scenes' text) instead of adding characters.
-- Johto Koga and Bruno can point at the existing ckoga/cbruno/koga/bruno files.
 
 ## Found on the way
 `tools/libultra_names.txt` had two names swapped, now fixed: 0x8009D620 is
