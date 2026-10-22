@@ -18,3 +18,6 @@ rdram_*.bin
 hd*_0x*.bin
 hd*_0x*.raw
 *_log*.txt
+
+# editor settings
+.vscode/
