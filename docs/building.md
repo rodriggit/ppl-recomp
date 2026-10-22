@@ -22,7 +22,8 @@ Other locations work too: pass `-DPPL_RUNTIME_DIR=...` and `-DPPL_RT64_DIR=...` 
 - Visual Studio with "Desktop development with C++" and **C++ Clang tools for
   Windows** (the runtime and the generated code need clang-cl).
 - A native CMake first in `PATH`.
-- Python 3.11+ with a virtual environment in `.venv` (`pip install rabbitizer==1.16.2 spimdisasm==1.42.4`).
+- Python 3.11+ with a virtual environment in `.venv` (`pip install rabbitizer==1.16.2 spimdisasm==1.42.4`;
+  the asset tools `tools/portrait.py` also need `pillow==13.0.0 numpy==2.5.4`).
 
 ## 1. Generate the recompiler inputs
 

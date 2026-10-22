@@ -52,6 +52,21 @@ Control byte c, output stops at row_bytes × height:
 func_8001CC7C is not a decompressor: it is a buffered read from an open file
 (handle {index, size, ROM address, position}).
 
+## New portraits
+`tools/portrait.py kit ROM mods/kit` extracts from the 15 Kanto portraits what a new
+one needs (kept under `mods/`, it holds Nintendo pixels):
+- the purple background of each frame: a radial gradient, fitted to the pixels most
+  portraits share, centered at (54, 100) in frame 0 and (44, 100) in frame 1 (mean
+  error under 1 level);
+- the name lettering, cut into glyphs from 11 of the names (in BROCK, MISTY, LT. SURGE
+  and BLAINE the letters touch and are skipped), plus F, J, P, W built from E, U, R, M.
+
+`tools/portrait.py make ROM mods/kit IMAGE "NAME" OUT.BIF [--crop X,Y,W,H] [--key auto]`
+puts the character (PNG with transparency, or a flat background removed with --key)
+on that background, writes the name on top (centered at x 53.5, baseline 21; "|" for
+two lines at 17 and 32), mirrors the character for frame 1, quantizes each frame to 255
+colors plus transparent index 0, and writes them into a copy of CBROCK.BIF's structure.
+
 ## Characters
 Character ids follow the portrait order of OPPONENT.SBF / POKEMON.SBF / RESULT.SBF:
 
