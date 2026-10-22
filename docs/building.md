@@ -62,6 +62,14 @@ cmake -S . -B cmake-build -G "Visual Studio 18 2026" -A x64 -T ClangCL
 cmake --build cmake-build --config RelWithDebInfo --target PPLRecomp
 ```
 
+Faster, with Ninja (from the "x64 Native Tools Command Prompt for VS 2026", which has
+Ninja and the MSVC environment; the executable goes to `cmake-build-ninja\PPLRecomp.exe`):
+
+```
+cmake -S . -B cmake-build-ninja -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo -DCMAKE_C_COMPILER=clang-cl -DCMAKE_CXX_COMPILER=clang-cl
+cmake --build cmake-build-ninja --target PPLRecomp
+```
+
 CMake downloads the SDL2 2.30.3 development package from the official SDL releases.
 RelWithDebInfo keeps a console with the runtime's logs; Release has none.
 
