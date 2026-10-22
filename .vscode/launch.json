@@ -1,0 +1,16 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "PPLRecomp (trace)",
+            "type": "cppvsdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/cmake-build/PPLRecomp.exe",
+            "cwd": "${workspaceFolder}",
+            "environment": [
+                { "name": "PPL_TRACE", "value": "1" }
+            ],
+            "console": "integratedTerminal"
+        }
+    ]
+}

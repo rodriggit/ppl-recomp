@@ -22,7 +22,8 @@ Tools used: `tools/romdis.py` (disassemble, `--rsp` for RSP code), `tools/survey
 All CPU code is in the main segment: ROM 0x1000–~0xB05C0
 (vram 0x80000400–~0x800AF9C0), with every `jal` inside 0x800xxxxx.
 `codescan.py` finds no code anywhere else in the ROM: **no overlays and no
-compressed code** (unlike Mario Tennis). To confirm while recompiling: nothing
+compressed code** (unlike the game of
+[mt64-recomp](https://github.com/rodriggit/mt64-recomp), the earlier port this one follows). To confirm while recompiling: nothing
 is loaded into RAM and executed later (look at the DMA destinations).
 
 ## RSP microcode

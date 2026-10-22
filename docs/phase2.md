@@ -7,7 +7,9 @@ cd tools
 ```
 writes `build/syms.toml` (the 1316 functions of `funcsplit.py`, named from
 `libultra_names.txt`) and `build/recomp.toml`. The code is stored uncompressed
-(phase 0), so N64Recomp reads the original ROM: no synthetic ROM as in Mario Tennis.
+(phase 0), so N64Recomp reads the original ROM, with no synthetic ROM holding the
+decompressed code as in [mt64-recomp](https://github.com/rodriggit/mt64-recomp), the
+earlier port this one follows.
 
 - Entry point 0x80000400: clears bss, sets sp to 0x801AD9A0 and leaves with
   `jr $t2` to the game's startup (0x80000520). That `jr` is patched into
@@ -41,7 +43,7 @@ The generated code calls one function that neither it nor the runtime defines:
 **osViGetCurrentLine_recomp**, which the port must provide.
 
 ## Next
-- The port: CMake project on N64ModernRuntime and RT64 as in Mario Tennis, the
+- The port: CMake project on N64ModernRuntime and RT64 as in mt64-recomp, the
   game entry, and osViGetCurrentLine_recomp. Its 20 callers wait for the
   vertical retrace in pairs (`while (line != 0)`, then `while (line == 0)`), so
   returning 0 and then a non-zero value, with a wait for the next VI in between,
