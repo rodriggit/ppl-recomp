@@ -1,21 +1,23 @@
 """In-match panel strips: the trainer and Pokémon pictures beside the playfield.
 
 panel.py ROM --dump OUT_DIR
-    Each character's strip as PNG (in character id order).
+    Every character's two strips as PNG (left_ID.png, right_ID.png).
 
-panel.py ROM TEMPLATE_ID TRAINER_IMAGE OUT.BIN [--trainer-crop X,Y,W,H] [--head-crop X,Y,W,H]
-         [--pokemon IMG1,IMG2,IMG3] [--theme RRGGBB,RRGGBB] [--key auto|RRGGBB] [--preview PNG]
-    A new strip with the size of character TEMPLATE_ID's (files.ini: @ROMADDR = OUT.BIN,
-    the address printed). Images on a flat background (--key) or with transparency.
-    --trainer-crop: the part of TRAINER_IMAGE for the 108×192 trainer picture (default: the
-    whole height, centered). --head-crop: the part shown in the corner of each Pokémon panel
-    (default: around the top of the character). --theme: the dark and light colors of the
-    speed-line background.
+panel.py ROM ID TRAINER_IMAGE OUT_PREFIX [--crop X,Y,W,H] [--pokemon IMG1,IMG2,IMG3]
+         [--theme RRGGBB,RRGGBB] [--key auto|RRGGBB] [--preview PNG]
+    New strips for both sides with the sizes of character ID's: OUT_PREFIX_L.BIN and
+    OUT_PREFIX_R.BIN, and the files.ini lines that replace the originals. Images on a flat
+    background (--key, default auto) or with transparency. --crop: the part of
+    TRAINER_IMAGE for the 108×192 picture (default: the whole height and some room above,
+    the figure shifted toward its left). --theme: the dark and light colors of the
+    speed-line background. --preview: both strips and the match boxes they make.
 
-Strips (docs/johto.md): ROM addresses in the table at 0x800B6340 (16 entries, one per
-character id, 15 = the final rival), raw RGBA5551, 112 pixels wide, columns 108-111 pure
-green (0x07C1) padding. Rows 0-191 are the trainer; the rest are three Pokémon panels of
-equal height ((height - 192) / 3), the trainer's head bottom-left and the Pokémon on the right.
+Strips (docs/johto.md): raw RGBA5551, 112 pixels wide, columns 108-111 pure green (0x07C1),
+one per character id in two tables (16 entries, 15 = the final rival):
+- 0x800B6340, left side: the whole 192-row trainer picture, then three Pokémon panels;
+- 0x800B6950, right side (mirrored): the picture's last 192 - P rows, then three panels.
+A panel (P rows) is the top of the trainer picture with that Pokémon; in a match the box
+shows the current Pokémon's panel over the rest of the picture.
 """
 import sys
 from pathlib import Path
@@ -25,21 +27,26 @@ from PIL import Image
 
 from portrait import remove_key
 
-W, VIS, TRAINER_H = 112, 108, 192
+W, VIS, PICTURE_H = 112, 108, 192
 GREEN = 0x07C1
-TABLE = 0x800B6340
+LEFT, RIGHT = 0x800B6340, 0x800B6950
 OFF = 0x80000400 - 0x1000
 
 
-def strips(rom):
-    base = [int.from_bytes(rom[TABLE - OFF + 4 * i:TABLE - OFF + 4 * i + 4], "big") for i in range(16)]
-    # the last strip ends where the next data starts: same size as the one before it
-    ends = base[1:] + [base[15] + (base[15] - base[14])]
-    return [(b, (e - b) // (2 * W)) for b, e in zip(base, ends)]
+def strips(rom, table):
+    """[(ROM address, height, panel height)] for the 16 characters."""
+    base = [int.from_bytes(rom[table - OFF + 4 * i:table - OFF + 4 * i + 4], "big") for i in range(16)]
+    ends = base[1:] + [base[15] + (base[15] - base[14])]   # the last one: as big as the one before
+    out = []
+    for b, e in zip(base, ends):
+        h = (e - b) // (2 * W)
+        p = (h - PICTURE_H) // 3 if table == LEFT else (h - PICTURE_H) // 2
+        out.append((b, h, p))
+    return out
 
 
-def decode(rom, addr, h):
-    px = np.frombuffer(rom[addr:addr + h * W * 2], ">u2").reshape(h, W).astype(int)
+def decode(data, addr, h):
+    px = np.frombuffer(data[addr:addr + h * W * 2], ">u2").reshape(h, W).astype(int)
     return np.dstack([(px >> 11 & 31) * 255 // 31, (px >> 6 & 31) * 255 // 31,
                       (px >> 1 & 31) * 255 // 31, (px & 1) * 255]).astype(np.uint8)
 
@@ -68,67 +75,77 @@ def speed_lines(w, h, dark, light, focus, seed):
     return np.dstack([rgb, np.full((h, w), 255)]).clip(0, 255).astype(np.uint8)
 
 
-def fit(im, box_w, box_h, crop):
-    """crop (X,Y,W,H) of im, or the whole height centered, resized to box_w × box_h."""
+def picture(trainer, crop, dark, light):
+    """The 108×192 trainer picture (left-side orientation)."""
     if crop:
         x, y, w, h = crop
-    else:   # the whole image plus some room above, bottom edges aligned
-        h = round(im.height * 1.2); w = round(h * box_w / box_h)
-        x = (im.width - w) // 2; y = im.height - h
-    return im.crop((x, y, x + w, y + h)).resize((box_w, box_h), Image.LANCZOS)
+    else:   # whole image plus room above, bottom edges aligned, figure shifted left
+        h = round(trainer.height * 1.2); w = round(h * VIS / PICTURE_H)
+        x = (trainer.width - w) // 2 + round(w * 0.1); y = trainer.height - h
+    pic = Image.fromarray(speed_lines(VIS, PICTURE_H, dark, light, (VIS, PICTURE_H * 0.3), 1))
+    pic.alpha_composite(trainer.crop((x, y, x + w, y + h)).resize((VIS, PICTURE_H), Image.LANCZOS))
+    return pic
 
 
-def head_box(im):
-    """The top of the character (alpha), edge to edge, for the panels' corner."""
-    a = np.asarray(im)[..., 3] > 128
-    rows = np.nonzero(a.any(1))[0]
-    top, height = rows.min(), rows.max() + 1 - rows.min()
-    band = round(height * 0.6)   # hair and face of a bust
-    cols = np.nonzero(a[top:top + band].any(0))[0]
-    return int(cols.min()), int(top), int(cols.max() + 1 - cols.min()), band
+def panel(pic, p_h, pokemon, key):
+    """Top of the picture with the Pokémon on the right (left-side orientation)."""
+    out = pic.crop((0, 0, VIS, p_h))
+    if pokemon:
+        p = remove_key(Image.open(pokemon).convert("RGBA"), key)
+        p = p.crop(p.getchannel("A").getbbox())
+        scale = min(VIS * 0.62 / p.width, p_h / p.height)
+        p = p.resize((max(1, round(p.width * scale)), max(1, round(p.height * scale))), Image.LANCZOS)
+        out.alpha_composite(p, (VIS - p.width, (p_h - p.height) // 2))
+    return out
 
 
-def make(rom, template, trainer_path, out, trainer_crop=None, head_crop=None, pokemon=(),
-         theme=("1C3C8C", "A8DCFF"), key="auto", preview=None):
-    addr, h = strips(rom)[template]
-    panel_h = (h - TRAINER_H) // 3
-    assert TRAINER_H + 3 * panel_h == h, "template strip isn't 192 + 3 equal panels"
+def build(pic, layout, h, p_h, pokemon, key):
+    strip = Image.new("RGBA", (W, h))
+    if layout == LEFT:
+        strip.paste(pic, (0, 0)); first = PICTURE_H
+    else:
+        strip.paste(pic.crop((0, p_h, VIS, PICTURE_H)), (0, 0)); first = PICTURE_H - p_h
+    for i in range(3):
+        strip.paste(panel(pic, p_h, pokemon[i] if i < len(pokemon) else None, key), (0, first + i * p_h))
+    if layout == RIGHT:   # mirrored: the trainer on the right, the Pokémon on the left
+        strip = Image.fromarray(np.concatenate([np.asarray(strip)[:, VIS - 1::-1], np.asarray(strip)[:, VIS:]], 1))
+    return np.asarray(strip)
+
+
+def box(strip, layout, h, p_h, which):
+    """What a match box shows with Pokémon `which`: its panel over the rest of the picture."""
+    first = PICTURE_H if layout == LEFT else PICTURE_H - p_h
+    rest = strip[p_h:PICTURE_H] if layout == LEFT else strip[0:PICTURE_H - p_h]
+    return np.concatenate([strip[first + which * p_h:first + (which + 1) * p_h], rest], 0)
+
+
+def make(rom, cid, trainer_path, prefix, crop=None, pokemon=(), theme=("1C3C8C", "A8DCFF"),
+         key="auto", preview=None):
     dark, light = ([int(c[i:i + 2], 16) for i in (0, 2, 4)] for c in theme)
     trainer = remove_key(Image.open(trainer_path).convert("RGBA"), key)
-
-    strip = Image.new("RGBA", (W, h))
-    section = Image.fromarray(speed_lines(W, TRAINER_H, dark, light, (W, TRAINER_H * 0.3), 1))
-    section.alpha_composite(fit(trainer, VIS, TRAINER_H, trainer_crop))
-    strip.paste(section, (0, 0))
-
-    hx, hy, hw, hh = head_crop or head_box(trainer)
-    head_h = round(panel_h * 0.8)
-    head = trainer.crop((hx, hy, hx + hw, hy + hh))
-    head = head.resize((min(round(VIS * 0.55), round(head_h * hw / hh)), head_h), Image.LANCZOS)
-    for i in range(3):
-        panel = Image.fromarray(speed_lines(W, panel_h, dark, light, (W, panel_h * 0.4), 2 + i))
-        if i < len(pokemon):
-            p = remove_key(Image.open(pokemon[i]).convert("RGBA"), key)
-            bbox = p.getchannel("A").getbbox()
-            p = p.crop(bbox)
-            scale = min((VIS * 0.7) / p.width, (panel_h * 1.0) / p.height)
-            p = p.resize((max(1, round(p.width * scale)), max(1, round(p.height * scale))), Image.LANCZOS)
-            panel.alpha_composite(p, (VIS - p.width, (panel_h - p.height) // 2))
-        panel.alpha_composite(head, (0, panel_h - head.height))
-        strip.paste(panel, (0, TRAINER_H + i * panel_h))
-
-    rgba = np.asarray(strip)
-    Path(out).parent.mkdir(parents=True, exist_ok=True)
-    Path(out).write_bytes(encode(rgba))
+    pic = picture(trainer, crop, dark, light)
+    shots = []
+    for layout, side in ((LEFT, "L"), (RIGHT, "R")):
+        addr, h, p_h = strips(rom, layout)[cid]
+        strip = build(pic, layout, h, p_h, pokemon, key)
+        out = Path(f"{prefix}_{side}.BIN")
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_bytes(encode(strip))
+        print(f"@{addr:X} = {out.name}   ; {'left' if layout == LEFT else 'right'} strip, 112x{h}, panels {p_h}")
+        back = decode(encode(strip), 0, h)
+        shots += [back, np.zeros((h, 4, 4), np.uint8)]
+        for k in range(3):
+            shots += [box(back, layout, h, p_h, k), np.zeros((PICTURE_H, 4, 4), np.uint8)]
     if preview:
-        Image.fromarray(decode(encode(rgba), 0, h)).save(preview)
-    print(f"{out}: {W}x{h} (panels {panel_h}); files.ini line: @{addr:X} = {Path(out).name}")
+        H = max(s.shape[0] for s in shots)
+        sheet = np.concatenate([np.pad(s, ((0, H - s.shape[0]), (0, 0), (0, 0))) for s in shots], 1)
+        Image.fromarray(sheet).save(preview)
 
 
 def main():
     args = sys.argv[1:]
     opts = {}
-    for o in ("--trainer-crop", "--head-crop", "--pokemon", "--theme", "--key", "--preview", "--dump"):
+    for o in ("--crop", "--pokemon", "--theme", "--key", "--preview", "--dump"):
         if o in args:
             i = args.index(o); opts[o[2:]] = args[i + 1]; del args[i:i + 2]
     if not args:
@@ -136,13 +153,13 @@ def main():
     rom = open(args[0], "rb").read()
     if "dump" in opts:
         out = Path(opts["dump"]); out.mkdir(parents=True, exist_ok=True)
-        for i, (addr, h) in enumerate(strips(rom)):
-            Image.fromarray(decode(rom, addr, h)).save(out / f"strip_{i:02}.png")
-            print(f"strip_{i:02}.png  ROM {addr:07X}  112x{h}")
+        for layout, side in ((LEFT, "left"), (RIGHT, "right")):
+            for i, (addr, h, p_h) in enumerate(strips(rom, layout)):
+                Image.fromarray(decode(rom, addr, h)).save(out / f"{side}_{i:02}.png")
+                print(f"{side}_{i:02}.png  ROM {addr:07X}  112x{h}  panels {p_h}")
         return
-    box = lambda s: tuple(int(v) for v in s.split(",")) if s else None
-    make(rom, int(args[1]), args[2], args[3], trainer_crop=box(opts.get("trainer-crop")),
-         head_crop=box(opts.get("head-crop")),
+    make(rom, int(args[1]), args[2], args[3],
+         crop=tuple(int(v) for v in opts["crop"].split(",")) if "crop" in opts else None,
          pokemon=opts["pokemon"].split(",") if "pokemon" in opts else (),
          theme=tuple(opts["theme"].split(",")) if "theme" in opts else ("1C3C8C", "A8DCFF"),
          key=opts.get("key", "auto"), preview=opts.get("preview"))

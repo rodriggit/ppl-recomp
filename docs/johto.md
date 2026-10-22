@@ -68,17 +68,23 @@ two lines at 17 and 32), mirrors the character for frame 1, quantizes each frame
 colors plus transparent index 0, and writes them into a copy of CBROCK.BIF's structure.
 
 ## In-match panel strips
-The pictures beside the playfield are not in the archive: one raw RGBA5551 strip per
-character id, 112 pixels wide (columns 108-111 pure green 0x07C1), at the ROM addresses
-in the table at 0x800B6340 (16 entries; 0x62AB10 for Ash, 0x654B10 for Brock, ...).
-Rows 0-191 hold the trainer in an action pose; the rest are three Pokémon panels of equal
-height, (height - 192) / 3 (Brock 66, Lt. Surge 115, Team Rocket 172), each with the
-trainer's head bottom-left and the Pokémon on the right, all over speed lines in the
-character's colors. func_8001A330 (the only reader of the table) loads a 112×150 window
-starting table2[id] / 2 rows down (table2 at 0x800B6380) and the three Pokémon BIFs.
-No table holds the panel height, so a new strip keeps its slot's size:
-`tools/panel.py ROM TEMPLATE_ID TRAINER.png OUT.BIN` builds one, and files.ini replaces
-the original by address (`@654B10 = OUT.BIN`). `--dump DIR` writes all 16 as PNG.
+The pictures beside the playfield are not in the archive: raw RGBA5551 strips, 112 pixels
+wide (columns 108-111 pure green 0x07C1), two per character id, at the ROM addresses of
+two 16-entry tables:
+- 0x800B6340, left box (player 1): a 192-row trainer picture, then three Pokémon panels
+  of P = (height - 192) / 3 rows (Ash 0x62AB10, Brock 0x654B10 with P = 66, ...);
+- 0x800B6950, right box (the opponent, a separate drawing facing left): the picture's
+  last 192 - P rows, then the three panels, P = (height - 192) / 2 (Brock 0x7F5BD0, P = 76).
+A panel is the top P rows of the picture with that Pokémon added (the trainer's head on
+one side, the Pokémon on the other); in a match the box shows the current Pokémon's panel
+over the rest of the picture, a full 108×192 scene (checked against a screenshot of Brock
+with Zubat). func_8001A330, the only reader of the left table, loads a 112×150 window
+table2[id] / 2 rows down (table2 at 0x800B6380) and the three Pokémon BIFs; the right
+table's reader isn't located yet.
+No table holds the panel height, so new strips keep their slot's sizes:
+`tools/panel.py ROM ID TRAINER.png PREFIX` builds both from one picture (the right one
+mirrored) and prints the files.ini lines (`@654B10 = PREFIX_L.BIN`, ...). `--dump DIR`
+writes all 32 as PNG.
 
 The 12 full-screen stadium backgrounds (table at 0x800B6808, raw RGBA5551 320×232 from
 ROM 0x35C3F0, 0x24400 bytes each) are grass, rock, water and indoor fields, each by day,
