@@ -30,6 +30,7 @@
 #include "xxHash/xxh3.h"
 
 #include "ppl_config.h"
+#include "ppl_mods.h"
 #include "ppl_render.h"
 #include "ppl_trace.h"
 
@@ -528,6 +529,13 @@ static std::filesystem::path config_folder() {
     return path;
 }
 
+static std::filesystem::path executable_folder() {
+    char* base = SDL_GetBasePath();
+    std::filesystem::path path = base != nullptr ? std::filesystem::u8path(base) : std::filesystem::current_path();
+    SDL_free(base);
+    return path;
+}
+
 // [graphics] of config.ini.
 static ultramodern::renderer::GraphicsConfig load_graphics() {
     namespace ur = ultramodern::renderer;
@@ -581,6 +589,7 @@ int main(int argc, char** argv) {
     const std::filesystem::path config_path = ppl::config::load(config_folder());
     fprintf(stderr, "[ppl] settings: %s\n", config_path.empty() ? "(defaults)" : ppl::config::path_text(config_path).c_str());
     load_controls();
+    ppl::mods::load(executable_folder());
 
     recomp::GameEntry game{
         .rom_hash = PPL_ROM_HASH,

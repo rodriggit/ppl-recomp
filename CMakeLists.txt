@@ -82,6 +82,7 @@ add_executable(PPLRecomp
     port/src/ppl_config.cpp
     port/src/ppl_dump.cpp
     port/src/ppl_hooks.cpp
+    port/src/ppl_mods.cpp
     port/src/ppl_s2dex.cpp
     port/src/register_overlays.cpp
     port/src/rt64_context.cpp

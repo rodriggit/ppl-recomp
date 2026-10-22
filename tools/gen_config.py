@@ -76,6 +76,17 @@ YIELD_HOOKS = [
 ]
 YIELD_TEXT = "{ void yield_self_1ms(uint8_t* rdram); yield_self_1ms(rdram); }"
 
+# Mod files (port/src/ppl_mods.cpp): func_80001CAC(rom, ram, size) does every archive read.
+# On entry, reads from the virtual area past the cartridge are served by the port; before
+# it returns (0x80001D3C, also the target of its size == 0 branch, with s2/s3 still at the
+# end of the copy), a directory read gets the mod entries.
+MOD_HOOKS = [
+    ("func_80001CAC", 0x80001CAC,
+     "{ int ppl_rom_read(uint8_t* rdram, recomp_context* ctx); if (ppl_rom_read(rdram, ctx)) return; }"),
+    ("func_80001CAC", 0x80001D3C,
+     "{ void ppl_rom_read_done(uint8_t* rdram, recomp_context* ctx); ppl_rom_read_done(rdram, ctx); }"),
+]
+
 # Switches N64Recomp doesn't recognize (its log calls them indirect tail calls): they dispatch
 # with `lw $rt, 0($rp)` + `jr $rt`, where $rp walks the jump table in a loop, and N64Recomp
 # only follows a table indexed through an addu. The runtime then finds no function at the
@@ -113,7 +124,7 @@ def all_hooks(code, funcs, names):
     """Text inserted by N64Recomp before an instruction, as {(function, vram): C text}.
     N64Recomp takes one hook per instruction, so texts for the same one are joined."""
     hooks = {}
-    for func, vram, text in [(f, v, YIELD_TEXT) for f, v in YIELD_HOOKS] + jump_table_hooks(code, funcs, names):
+    for func, vram, text in [(f, v, YIELD_TEXT) for f, v in YIELD_HOOKS] + MOD_HOOKS + jump_table_hooks(code, funcs, names):
         hooks[func, vram] = hooks[func, vram] + "\n    " + text if (func, vram) in hooks else text
     return hooks
 
@@ -130,7 +141,7 @@ def main():
     write_syms(build / "syms.toml", funcs, names)
 
     present = {names.get(s, f"func_{s:08X}") for s, _ in funcs}
-    missing = [n for n in STUBS + ignored + [h[0] for h in YIELD_HOOKS + JUMP_TABLES] if n not in present]
+    missing = [n for n in STUBS + ignored + [h[0] for h in YIELD_HOOKS + MOD_HOOKS + JUMP_TABLES] if n not in present]
     assert not missing, f"not a function: {missing}"
     assert ENTRY in {s for s, _ in funcs} and code.w(ENTRY_JR) == 0x01400008  # jr $t2
 

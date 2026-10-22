@@ -90,6 +90,13 @@ fullscreen = no
 filter_2d = xbr
 ; api: auto, d3d12 (Windows) or vulkan.
 api = auto
+
+[mods]
+; campaign: a folder inside the mods folder whose files.ini lists archive files to replace
+; or add ("CBROCK.BIF = CFALKNER.BIF"). Empty: play the original game.
+campaign =
+; folder: where the campaign folders are; relative paths start at the executable's folder.
+folder = mods
 )";
 
 namespace {
