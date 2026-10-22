@@ -6,12 +6,13 @@ portrait.py kit ROM KIT_DIR
     gradient fitted to the pixels the portraits share) and the name lettering, cut into
     glyphs, plus F, J, P and W built from E, U, R and M.
 
-portrait.py make ROM KIT_DIR IMAGE "NAME" OUT.BIF [--crop X,Y,W,H] [--key auto|RRGGBB]
+portrait.py make ROM KIT_DIR IMAGE "NAME" OUT.BIF [--crop X,Y,W,H|auto] [--key auto|RRGGBB]
                  [--template CBROCK.BIF] [--preview DIR]
     IMAGE: the character, with transparency (PNG) or on a flat background removed with
     --key ("auto" takes the top-left pixel's color). --crop is the part of IMAGE that
     fills the 99×129 picture (default: the whole image, cropped to that aspect from the
-    top). NAME: the lettering on top; "|" splits two lines ("TEAM|ROCKET").
+    top; "auto": the top of the head under the name and the head centered, which needs
+    transparency or --key). NAME: the lettering on top; "|" splits two lines ("TEAM|ROCKET").
     Writes frame 0 (character facing right, as given) and frame 1 (character mirrored,
     name not), each quantized to 255 colors plus the transparent index, into a copy of
     the template's BIF structure.
@@ -273,7 +274,19 @@ def load_character(path, key, crop):
             rgb[..., c] = np.where(edge, np.minimum(rgb[..., c], others), rgb[..., c])
         a[..., :3] = rgb
         im = Image.fromarray(a)
-    if crop:
+    if crop == "auto":
+        # bust framing like the originals: the top of the head just under the name
+        # (y 24 of 129), everything below it down to the image's bottom edge, the
+        # head centered
+        alpha = np.asarray(im)[..., 3] > 128
+        rows = np.nonzero(alpha.sum(1) > im.width * 0.02)[0]
+        top = rows.min()
+        h = round((im.height - top) * H / (H - 24))
+        y = top - round(24 * h / H)
+        head = alpha[top:top + max(1, (im.height - top) // 4)]
+        cx = np.nonzero(head.any(0))[0].mean()
+        w = round(h * VIS / H); x = round(cx - w / 2)
+    elif crop:
         x, y, w, h = crop
     else:  # whole width, picture aspect, from the top
         w = im.width; h = min(im.height, round(w * H / VIS)); x = y = 0
@@ -329,7 +342,9 @@ def main():
     if args[:1] == ["kit"]:
         build_kit(args[1], args[2])
     elif args[:1] == ["make"]:
-        crop = tuple(int(v) for v in opts["crop"].split(",")) if "crop" in opts else None
+        crop = opts.get("crop")
+        if crop and crop != "auto":
+            crop = tuple(int(v) for v in crop.split(","))
         make(args[1], args[2], args[3], args[4], args[5], crop=crop, key=opts.get("key"),
              template=opts.get("template", "CBROCK.BIF"), preview=opts.get("preview"))
     else:
