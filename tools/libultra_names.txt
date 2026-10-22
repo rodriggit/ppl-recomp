@@ -157,8 +157,8 @@
 8009D400 bzero  # 0xA0 bytes, 97 callers; clears the flash handle in osFlashInit
 8009D0E0 bcopy  # 0x320 bytes, 96 callers; used by _VirtualToPhysicalTask
 800A4450 _Printf  # 0x910 bytes; integer and float conversion helpers follow
-8009DA60 sprintf  # _Printf into a buffer; 54 callers from game code, no hardware
-8009D620 osSyncPrintf  # _Printf with an output routine (0x8009D6A0) that ends in __osRdbSend; 52 game callers
+8009D620 sprintf  # _Printf(0x8009D6A0, buf, fmt, args), copy-out routine 0x8009D6A0 -> 0x8009D584, then NUL at buf + n; 52 callers ("TRANSITION%d", ...)
+8009DA60 osSyncPrintf  # _Printf(out, NULL, fmt, args), out = 0x8009D6F0 (ends in __osRdbSend), or 0x8009D808 when 0x801AB62C is set; 56 callers (error messages)
 8009CD40 __osRdbSend  # writes the RDB port 0xC0000000 when __osRdbWriteOK (0x800BE9C0, initially 1): must be a no-op in the port
 
 # --- error reporting of the debug libultra (not in N64Recomp's lists)

@@ -62,8 +62,9 @@ for N64Recomp:
   alternating values or waiting for the runtime's next VI to keep the pacing.
 - 0x8009CD40 (__osRdbSend) writes the RDB port at 0xC0000000 (debug output to a
   development kit) when __osRdbWriteOK (0x800BE9C0) is set, and it starts at 1.
-  The game calls osSyncPrintf (0x8009D620, 52 calls), whose output routine ends
-  there: on a console the write goes nowhere, in the port it would fault.
+  The game calls osSyncPrintf (0x8009DA60, 56 calls; first named 0x8009D620,
+  which is sprintf, see docs/johto.md), whose output routine ends there: on a
+  console the write goes nowhere, in the port it would fault.
   __osRdbSend is in N64Recomp's reimplemented list, and the runtime's version
   writes the buffer to stdout and returns its size, so the game's debug output
   ends up on the console.

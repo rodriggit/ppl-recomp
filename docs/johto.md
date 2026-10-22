@@ -125,12 +125,14 @@ message is "screenLoad: TEXT has internal NULL-character", ROM 0xC4DC8).
 - Johto Koga and Bruno can point at the existing ckoga/cbruno/koga/bruno files.
 
 ## Found on the way
-`tools/libultra_names.txt` swaps two names: 0x8009D620 is **sprintf** (writes the
-terminating NUL at buf + n; output routine 0x8009D6A0 copies into the buffer) and
-0x8009DA60 is **osSyncPrintf** (first argument is the format; used for "imageLoad:
-Could not load IMAGE '%s'"). Not changed yet: to check against N64Recomp's
-reimplemented/ignored lists first, since a runtime osSyncPrintf in place of the game's
-sprintf would break every `sprintf` call (TRANSITION%d, RESULT%d, DIPLOMA-%d, ...).
+`tools/libultra_names.txt` had two names swapped, now fixed: 0x8009D620 is
+**sprintf** (writes the terminating NUL at buf + n; output routine 0x8009D6A0 copies
+into the buffer) and 0x8009DA60 is **osSyncPrintf** (first argument is the format;
+used for "imageLoad: Could not load IMAGE '%s'"). Harmless for the port: neither
+name is reimplemented by N64Recomp (a13e5cf). sprintf is in its `renamed_funcs`,
+which only appends `_recomp` and still recompiles the function, and osSyncPrintf is
+in no list, so both were always recompiled from the game's code. The next
+`gen_config.py` run gives them the right names.
 
 ## Still unknown
 - Where the battle takes the opponent's id, AI level and music per stage.
