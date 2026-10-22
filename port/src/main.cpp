@@ -418,6 +418,9 @@ static void update_gfx(void*) {
                     (event.key.keysym.scancode == SDL_SCANCODE_RETURN && (event.key.keysym.mod & KMOD_ALT))) {
                     toggle_fullscreen();
                 }
+                else if (event.key.keysym.scancode == SDL_SCANCODE_F9) {
+                    ppl::trace::dump_remaining = ppl::trace::dump_tasks;
+                }
                 break;
         }
     }

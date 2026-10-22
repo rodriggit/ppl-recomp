@@ -8,6 +8,7 @@
 
 namespace RT64 {
     struct Application;
+    struct GBI;
 }
 
 namespace ppl::renderer {
@@ -32,6 +33,9 @@ namespace ppl::renderer {
 
     std::unique_ptr<ultramodern::renderer::RendererContext> create_render_context(
         uint8_t* rdram, ultramodern::renderer::WindowHandle window_handle, bool developer_mode);
+
+    // Registers the S2DEX commands RT64 lacks into a loaded GBI (ppl_s2dex.cpp).
+    void add_s2dex_commands(RT64::GBI* gbi);
 }
 
 #endif

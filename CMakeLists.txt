@@ -79,7 +79,9 @@ target_compile_options(RecompiledFuncs PRIVATE
 # Executable
 add_executable(PPLRecomp
     port/src/main.cpp
+    port/src/ppl_dump.cpp
     port/src/ppl_hooks.cpp
+    port/src/ppl_s2dex.cpp
     port/src/register_overlays.cpp
     port/src/rt64_context.cpp
     ${PPL_GENERATED_DIR}/RecompiledFuncs/lookup.cpp

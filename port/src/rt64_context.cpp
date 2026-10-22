@@ -201,8 +201,18 @@ ppl::renderer::RT64Context::~RT64Context() = default;
 
 void ppl::renderer::RT64Context::send_dl(const OSTask* task) {
     ppl::trace::gfx_tasks++;
+    if (const int remaining = ppl::trace::dump_remaining.load(); remaining > 0) {
+        ppl::trace::dump_task(app->core.RDRAM, task, "_" + std::to_string(ppl::trace::dump_tasks - remaining));
+        ppl::trace::dump_remaining--;
+    }
+    static const bool dump_offscreen = std::getenv("PPL_DUMP_OFFSCREEN") != nullptr;
+    static int offscreen_dumped = 0;
+    if (dump_offscreen && offscreen_dumped < ppl::trace::offscreen_dumps && ppl::trace::draws_offscreen(app->core.RDRAM, task)) {
+        ppl::trace::dump_task(app->core.RDRAM, task, "_offscreen_" + std::to_string(offscreen_dumped++));
+    }
     app->state->rsp->reset();
     app->interpreter->loadUCodeGBI(task->t.ucode & 0x3FFFFFF, task->t.ucode_data & 0x3FFFFFF, true);
+    add_s2dex_commands(app->interpreter->hleGBI);
     app->processDisplayLists(app->core.RDRAM, task->t.data_ptr & 0x3FFFFFF, 0, true);
 }
 
