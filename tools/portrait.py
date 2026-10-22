@@ -264,6 +264,14 @@ def load_character(path, key, crop):
         col = a[0, 0, :3].astype(int) if key == "auto" else np.array([int(key[i:i + 2], 16) for i in (0, 2, 4)])
         dist = np.abs(a[..., :3].astype(int) - col).max(-1)
         a[..., 3] = np.where(dist < 24, 0, np.where(dist < 48, (dist - 24) * 255 // 24, a[..., 3]))
+        # despill: the key color bleeds into the antialiased edge; pull the channel(s)
+        # that dominate in the key down to the level of the others near the edge
+        edge = dist < 140
+        rgb = a[..., :3].astype(int)
+        for c in np.nonzero(col == col.max())[0]:
+            others = np.delete(rgb, c, axis=2).max(-1)
+            rgb[..., c] = np.where(edge, np.minimum(rgb[..., c], others), rgb[..., c])
+        a[..., :3] = rgb
         im = Image.fromarray(a)
     if crop:
         x, y, w, h = crop
